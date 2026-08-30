@@ -18,7 +18,7 @@ class AppColors {
 
   static const Color bgDark = Color(0xFF2A2A2A);
 
-  static const Color bgPrimary = Color.fromARGB(255, 250, 245, 255);
+  static const Color bgPrimary = Color.fromARGB(255, 252, 249, 255);
   static const Color isHovered = Color.fromARGB(255, 230, 221, 239);
   static const Color isSelected = Color(0xFFF7EEFF);
 

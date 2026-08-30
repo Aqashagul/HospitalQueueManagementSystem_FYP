@@ -142,10 +142,10 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 Image.asset(
                   "assets/images/app_logo.png",
-                  width: 43,
-                  height: 43,
+                  width: 60,
+                  height: 60,
                 ),
-                const SizedBox(height: 29),
+                const SizedBox(height: 25),
                 Text(
                   "Welcome Back",
                   style: GoogleFonts.playfairDisplay(
@@ -171,7 +171,7 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: InputDecoration(
               hintText: "example@gmail.com",
               filled: true,
-              fillColor: Colors.grey.shade100,
+              fillColor: const Color.fromARGB(255, 255, 255, 255),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(
@@ -202,7 +202,7 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: InputDecoration(
               hintText: "password",
               filled: true,
-              fillColor: Colors.grey.shade100,
+              fillColor: const Color.fromARGB(255, 255, 255, 255),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(

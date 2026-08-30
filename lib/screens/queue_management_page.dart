@@ -11,6 +11,7 @@ import 'package:queue_management_system/widgets/generic_p.dart/search_controller
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
+import 'package:queue_management_system/widgets/resuable/rounded_card.dart';
 
 
 class QueueManagementPage extends StatefulWidget {
@@ -93,11 +94,13 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                // Header
-                Text("Queue Management", style: AppTypography.title),
-                 const Spacer(), 
-    const LiveDateTimeWidget(),],),
+                Row(
+                  children: [
+                    Text("Queue Management", style: AppTypography.title),
+                    const Spacer(),
+                    const LiveDateTimeWidget(),
+                  ],
+                ),
                 const SizedBox(height: 6),
                 Text(
                   "Manage all doctors' live queues",
@@ -133,10 +136,7 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
                     child: Center(
                       child: Text(
                         "No doctors match the selected filters",
-                        style: TextStyle(
-                          color: Colors.grey.shade500,
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
                       ),
                     ),
                   )
@@ -184,12 +184,10 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
           value: value,
           icon: const Icon(Icons.keyboard_arrow_down, size: 20),
           items: items
-              .map(
-                (item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(item, style: AppTypography.normaltext),
-                ),
-              )
+              .map((item) => DropdownMenuItem(
+                    value: item,
+                    child: Text(item, style: AppTypography.normaltext),
+                  ))
               .toList(),
           onChanged: onChanged,
         ),
@@ -223,9 +221,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
   // Returns null if no matching doctor is found in the store.
   DoctorModel? get doctor {
     try {
-      return AppdataStore().doctors.firstWhere(
-        (d) => d.name == widget.queue.name,
-      );
+      return AppdataStore().doctors.firstWhere((d) => d.name == widget.queue.name);
     } catch (_) {
       return null;
     }
@@ -251,16 +247,12 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
         // Notify the parent list so it can refresh after the detail page closes.
         widget.onReturn();
       },
-      child: Container(
+      // Reusing the shared RoundedCard here instead of a hand-rolled Container
+      // keeps this card's styling consistent with the rest of the app.
+      child: RoundedCard(
+        color: Colors.white,
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color.fromARGB(255, 216, 216, 216),
-            width: 1,
-          ),
-        ),
+      
         child: Row(
           children: [
             // Doctor identity
@@ -273,10 +265,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
                 children: [
                   Text(
                     widget.queue.name,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -292,10 +281,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
             const SizedBox(width: 32),
             _buildStatBlock("WAITING", "${widget.queue.waitingCount}"),
             const SizedBox(width: 32),
-            _buildStatBlock(
-              "COMPLETED\nTODAY",
-              "${widget.queue.completedToday}",
-            ),
+            _buildStatBlock("COMPLETED\nTODAY", "${widget.queue.completedToday}"),
 
             const Spacer(),
 
@@ -312,10 +298,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
             // is active, free (no current patient), and someone is waiting.
             _buildFilledButton(
               label: "Call Next",
-              enabled:
-                  isActive &&
-                  !hasCurrentPatient &&
-                  widget.queue.waitingCount > 0,
+              enabled: isActive && !hasCurrentPatient && widget.queue.waitingCount > 0,
               onTap: widget.onCallNext,
             ),
             const SizedBox(width: 8),
@@ -344,10 +327,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-          ),
+          Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -363,14 +343,9 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 24,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
-          color: enabled
-              ? const Color(0xFF2E7D32)
-              : const Color(0xFFE8E8E8),
+          color: enabled ? const Color(0xFF2E7D32) : const Color(0xFFE8E8E8),
           borderRadius: BorderRadius.circular(10),
           boxShadow: enabled
               ? [
@@ -387,9 +362,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: enabled
-                ? Colors.white
-                : const Color(0xFF999999),
+            color: enabled ? Colors.white : const Color(0xFF999999),
           ),
         ),
       ),
@@ -406,14 +379,9 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 24,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
-          color: enabled
-              ? AppColors.primaryPurple
-              : const Color(0xFFE8E8E8),
+          color: enabled ? AppColors.primaryPurple : const Color(0xFFE8E8E8),
           borderRadius: BorderRadius.circular(10),
           boxShadow: enabled
               ? [
@@ -430,9 +398,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: enabled
-                ? Colors.white
-                : const Color(0xFF999999),
+            color: enabled ? Colors.white : const Color(0xFF999999),
           ),
         ),
       ),

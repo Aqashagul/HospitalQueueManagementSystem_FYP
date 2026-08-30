@@ -212,6 +212,7 @@ class DashboardPage extends StatelessWidget {
 Row(
   children: [
     RoundedCard(
+       color: Colors.white, 
       width: 680,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,6 +250,7 @@ Row(
 
     Expanded(
       child: RoundedCard(
+         color: Colors.white, 
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
