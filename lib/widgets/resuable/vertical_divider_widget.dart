@@ -6,11 +6,11 @@ class VerticalDividerWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return VerticalDivider(
-      width: 24, // Divider jitni space lega
-      thickness: 2, // Line ki thickness
+      width: 24, 
+      thickness: 2, 
       color: Colors.grey,
-      indent: 10, // Upar se gap
-      endIndent: 10, // Neeche se gap
+      indent: 10,
+      endIndent: 10, 
     );
   }
 }

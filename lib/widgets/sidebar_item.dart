@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/models/nav_items_model.dart';
-
+import 'package:google_fonts/google_fonts.dart';
 
 class SidebarItem extends StatefulWidget {
   final NavItem item;
   final bool isSelected;
   final bool isHovered;
   final VoidCallback onTap;
+  final bool isCollapsed;
 
   const SidebarItem({
     super.key,
@@ -14,6 +16,7 @@ class SidebarItem extends StatefulWidget {
     required this.isSelected,
     required this.isHovered,
     required this.onTap,
+    required this.isCollapsed,
   });
 
   @override
@@ -24,6 +27,10 @@ class _SidebarItemState extends State<SidebarItem>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _offsetAnimation;
+
+ 
+  OverlayEntry? _tooltipEntry;
+  final GlobalKey _itemKey = GlobalKey();
 
   @override
   void initState() {
@@ -39,9 +46,77 @@ class _SidebarItemState extends State<SidebarItem>
   }
 
   @override
+  void didUpdateWidget(covariant SidebarItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final bool shouldShow = widget.isCollapsed && widget.isHovered;
+    final bool wasShowing = oldWidget.isCollapsed && oldWidget.isHovered;
+
+    if (shouldShow && !wasShowing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showTooltip());
+    } else if (!shouldShow && wasShowing) {
+      _removeTooltip();
+    }
+  }
+
+  @override
   void dispose() {
+    _removeTooltip();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _showTooltip() {
+    if (!mounted || !widget.isCollapsed || !widget.isHovered) return;
+
+    final renderBox = _itemKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.attached) return;
+
+    final position = renderBox.localToGlobal(Offset.zero);
+    final size = renderBox.size;
+
+    _removeTooltip();
+
+    _tooltipEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        left: position.dx + size.width + 8,
+        top: position.dy + (size.height / 2) - 16,
+        child: IgnorePointer(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .25),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Text(
+                widget.item.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(_tooltipEntry!);
+  }
+
+  void _removeTooltip() {
+    _tooltipEntry?.remove();
+    _tooltipEntry = null;
   }
 
   void _handleTap() {
@@ -52,16 +127,16 @@ class _SidebarItemState extends State<SidebarItem>
   @override
   Widget build(BuildContext context) {
     final Color iconColor = widget.isSelected
-        ? Colors.cyanAccent
-        : (widget.isHovered ? Colors.white : Colors.grey);
+        ? AppColors.bgColor
+        : (widget.isHovered ? AppColors.bgColor : AppColors.textPurple);
 
     return GestureDetector(
+      key: _itemKey,
       onTap: _handleTap,
       child: SizedBox(
-        height: 65, // fixed height — Stack ko pata hona chahiye kitni space hai
+        height: 65,
         child: Stack(
           children: [
-            // Content: icon + text + background box
             Positioned.fill(
               child: AnimatedBuilder(
                 animation: _offsetAnimation,
@@ -76,41 +151,62 @@ class _SidebarItemState extends State<SidebarItem>
                     vertical: 4,
                     horizontal: 6,
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 2, horizontal: 12),
                   decoration: BoxDecoration(
+                    gradient: widget.isSelected
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFBCA8E8), Color(0xFFA25AE6)],
+                          )
+                        : null,
                     color: widget.isSelected
-                        ? Colors.grey.shade800
+                        ? null
                         : (widget.isHovered
-                            ? Colors.grey.shade900
+                            ? AppColors.softPurple
                             : Colors.transparent),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        widget.item.icon,
-                        color: iconColor,
-                        size: 25,
-                      ),
-                      if (!widget.isSelected) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.item.title,
-                          style: TextStyle(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                    
+                      final bool canShowLabel =
+                          !widget.isCollapsed && constraints.maxWidth > 70;
+
+                      return Row(
+                        mainAxisAlignment: widget.isCollapsed
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.start,
+                        children: [
+                          Icon(
+                            widget.item.icon,
                             color: iconColor,
-                            fontSize: 9,
+                            size: 25,
                           ),
-                        ),
-                      ],
-                    ],
+                  if (canShowLabel) ...[
+  const SizedBox(width: 14),
+  Expanded(
+    child: Text(
+  widget.item.title,
+  softWrap: true,
+  style: GoogleFonts.inter(
+    color: iconColor,
+    fontSize: 13,
+    fontWeight: widget.isSelected ? FontWeight.w700 : FontWeight.w500,
+  ),
+),
+  ),
+],
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
             ),
 
-            // Selection indicator bar — left edge, animated width
+            // Selection indicator bar
             Positioned(
               left: 0,
               top: 0,
@@ -121,9 +217,9 @@ class _SidebarItemState extends State<SidebarItem>
                   curve: Curves.easeOut,
                   width: widget.isSelected ? 4 : 0,
                   height: 28,
-                  decoration: const BoxDecoration(
-                    color: Colors.cyanAccent,
-                    borderRadius: BorderRadius.only(
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryPurple,
+                    borderRadius: const BorderRadius.only(
                       topRight: Radius.circular(4),
                       bottomRight: Radius.circular(4),
                     ),
