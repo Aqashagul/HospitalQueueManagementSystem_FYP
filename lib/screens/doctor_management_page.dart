@@ -66,6 +66,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             required: true,
             options: AppdataStore().departments.map((d) => d.name).toList(),
           ),
+          const FormFieldConfig(key: "fee", label: "Doctor Fee", type: FieldType.text, hint: "e.g. 1500", isNumeric: true), 
           const FormFieldConfig(key: "experience", label: "Experience", type: FieldType.text, hint: "e.g. 12 Years", halfWidth: true),
           const FormFieldConfig(key: "workingHours", label: "Working Hours", type: FieldType.text, hint: "e.g. 9:00 AM - 5:00 PM", halfWidth: true),
           const FormFieldConfig(key: "qualification", label: "Qualification", type: FieldType.text, hint: "e.g. MBBS, FCPS"),
@@ -85,6 +86,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
               workingHours: values["workingHours"],
               qualification: values["qualification"],
               tokenPrefix: values["tokenPrefix"],
+              fee:values["fee"] != null ? int.tryParse(values["fee"]) ?? 0 : 0,
             ));
             // Keep the search controller's source list in sync with the new doctor.
             doctorSearch.updateItems(AppdataStore().doctors);
@@ -129,6 +131,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
           const FormFieldConfig(key: "qualification", label: "Qualification", type: FieldType.text, hint: "e.g. MBBS, FCPS"),
           const FormFieldConfig(key: "tokenPrefix", label: "Token Prefix", type: FieldType.text, hint: "e.g. CD (leave blank for auto)"),
           const FormFieldConfig(key: "availability", label: "Availability", type: FieldType.pillSelector, options: ["Available", "Unavailable"]),
+          const FormFieldConfig(key: "fee", label: "Doctor Fee", type: FieldType.text, hint: "e.g. 1500", isNumeric: true),
         ],
         onSubmit: (values) {
           setState(() {
@@ -146,6 +149,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
               workingHours: values["workingHours"],
               qualification: values["qualification"],
               tokenPrefix: values["tokenPrefix"],
+              fee: doc.fee, // preserved — not editable from this form
             );
             doctorSearch.updateItems(AppdataStore().doctors);
           });
@@ -170,6 +174,13 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             icon: Icons.apartment_outlined,
             iconColor: const Color(0xFF56CCF2),
           ),
+
+          DetailRow(
+  label: "Fee",
+  value: "Rs. ${doc.fee}",
+  icon: Icons.payments_outlined,
+  iconColor: const Color(0xFF6FCF97),
+),
           DetailRow(
             label: "Patients",
             value: "${_activePatientsCount(doc.name)}",

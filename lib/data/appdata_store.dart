@@ -58,6 +58,7 @@ class AppdataStore extends ChangeNotifier {
       workingHours: "9:00 AM - 5:00 PM",
       qualification: "MBBS, FCPS (Cardiology)",
       tokenPrefix: "A",
+      fee: 2500
     ),
 
 DoctorModel(
@@ -71,6 +72,7 @@ DoctorModel(
       workingHours: "10:00 AM - 6:00 PM",
       qualification: "MBBS, MD",
       tokenPrefix: "F",
+        fee: 1500
     ),
 
     DoctorModel(
@@ -84,6 +86,7 @@ DoctorModel(
       workingHours: "10:00 AM - 6:00 PM",
       qualification: "MBBS, FRCS",
       tokenPrefix: "D",
+        fee: 2000
     ),
     DoctorModel(
       name: "Dr.Hamza",
@@ -96,6 +99,7 @@ DoctorModel(
       workingHours: "8:00 AM - 4:00 PM",
       qualification: "MBBS, FCPS",
       tokenPrefix: "C",
+        fee: 1000
     ),
    
     DoctorModel(
@@ -109,6 +113,7 @@ DoctorModel(
       workingHours: "9:00 AM - 5:00 PM",
       qualification: "MBBS, FCPS",
       tokenPrefix: "B",
+        fee: 2000
     ),
     DoctorModel(
       name: "Dr.hoorain",
@@ -121,6 +126,7 @@ DoctorModel(
       workingHours: "8:00 AM - 4:00 PM",
       qualification: "MBBS, MD",
       tokenPrefix: "E",
+        fee: 1200
     ),
 
     DoctorModel(
@@ -134,6 +140,7 @@ DoctorModel(
       workingHours: "1:00 PM - 9:00 PM",
       qualification: "MBBS, MD (Derma)",
       tokenPrefix: "J",
+        fee: 1300
     ),
     
     DoctorModel(
@@ -147,6 +154,7 @@ DoctorModel(
       workingHours: "10:00 AM - 5:00 PM",
       qualification: "MBBS, DCH",
       tokenPrefix: "G",
+        fee: 500
     ),
     DoctorModel(
       name: "Dr.Usman Tariq",
@@ -159,6 +167,7 @@ DoctorModel(
       workingHours: "11:00 AM - 7:00 PM",
       qualification: "MBBS, FCPS",
       tokenPrefix: "H",
+        fee: 500
     ),
     DoctorModel(
       name: "Dr.Zainab Hussain",
@@ -171,6 +180,7 @@ DoctorModel(
       workingHours: "12:00 PM - 8:00 PM",
       qualification: "MBBS, DDVL",
       tokenPrefix: "I",
+        fee: 700
     ),
    
     DoctorModel(
@@ -184,6 +194,7 @@ DoctorModel(
       workingHours: "9:00 AM - 5:00 PM",
       qualification: "MBBS, DDVL",
       tokenPrefix: "K",
+        fee: 1000
     ),
      DoctorModel(
       name: "Dr.Rubina",
@@ -196,6 +207,7 @@ DoctorModel(
       workingHours: "11:00 AM - 7:00 PM",
       qualification: "MBBS",
       tokenPrefix: "R",
+        fee: 800
     ),
   ];
 

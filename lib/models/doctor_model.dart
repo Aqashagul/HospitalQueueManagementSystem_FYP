@@ -12,7 +12,8 @@ class DoctorModel {
   final String? experience;     
   final String? workingHours;     
   final String? qualification;    
-  final String? tokenPrefix;      
+  final String? tokenPrefix;     
+   final int fee; 
 
   const DoctorModel({
     required this.name,
@@ -25,6 +26,7 @@ class DoctorModel {
     this.experience,       
     this.workingHours,     
     this.qualification,    
-    this.tokenPrefix,      
+    this.tokenPrefix,   
+    required this.fee,   
   });
 }
