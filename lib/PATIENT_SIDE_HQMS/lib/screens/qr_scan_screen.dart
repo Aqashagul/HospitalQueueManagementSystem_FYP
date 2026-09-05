@@ -16,7 +16,6 @@ class QRScanScreen extends StatefulWidget {
 class _QRScanScreenState extends State<QRScanScreen> {
   final MobileScannerController _controller = MobileScannerController();
   bool _hasScanned = false;
-  bool _isTorchOn = false;
 
   void _onDetect(BarcodeCapture capture) {
     if (_hasScanned) return;
@@ -34,11 +33,6 @@ class _QRScanScreenState extends State<QRScanScreen> {
         builder: (_) => RegistrationScreen(scannedQueueId: queueId),
       ),
     );
-  }
-
-  void _toggleTorch() {
-    _controller.toggleTorch();
-    setState(() => _isTorchOn = !_isTorchOn);
   }
 
   @override
@@ -60,17 +54,11 @@ class _QRScanScreenState extends State<QRScanScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(
-                      Icons.arrow_back,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 12),
                   Center(
-                    child: const Text(
+                    child: Text(
                       'Scan QR Code',
+
                       style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.bold,
@@ -78,76 +66,71 @@ class _QRScanScreenState extends State<QRScanScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 8),
                   Center(
-                    child: const Text(
-                    'Scan the QR code provided at the reception to join the queue.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textGrey,
-                      height: 1.5,
+                    child: Text(
+                      'Scan the QR code provided at the reception to join the queue.',
+                      
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textGrey,
+                        height: 1.5,
+                      ),
                     ),
                   ),
-                  ),
-                  
-                  const SizedBox(height: 20),
 
-                  // Scan frame with demo QR image + animated scan line
+                  const SizedBox(height: 28),
+
+                  // Real camera
                   GestureDetector(
                     onTap: () => _proceedToRegistration('DEMO-QUEUE-001'),
                     child: ScanFrame(
-                    controller: _controller,
-                    onDetect: _onDetect,
-                    useDemoImage:
-                        true, 
-                  ),
-                  ),
-                  
-                  const SizedBox(height: 20),
-
-                  // Flashlight toggle 
-                  Center(
-                    child: TextButton.icon(
-                      onPressed: _toggleTorch,
-                      style: TextButton.styleFrom(
-                        backgroundColor: _isTorchOn
-                            ? Colors.green.withValues(alpha: .1)
-                            : Colors.red.withValues(alpha: .08),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                      ),
-                      icon: Icon(
-                        _isTorchOn ? Icons.flash_on : Icons.flash_off,
-                        color: _isTorchOn ? Colors.green : Colors.red,
-                        size: 20,
-                      ),
-                      label: Text(
-                        _isTorchOn
-                            ? 'Turn off flashlight'
-                            : 'Tap to turn on flashlight',
-                        style: TextStyle(
-                          color: _isTorchOn
-                              ? Colors.green.shade700
-                              : Colors.red.shade600,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      controller: _controller,
+                      onDetect: _onDetect,
+                      useDemoImage: false, // Real camera dikhega
                     ),
                   ),
                   const SizedBox(height: 20),
 
-                  // Premium "How to scan" card
                   const HowToScanCard(),
-                  
                   const SizedBox(height: 16),
 
-               ],
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: .06),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.lock_outline,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'This QR code is unique to this location. Do not share it with others.',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.textGrey,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
               ),
             ),
           ),

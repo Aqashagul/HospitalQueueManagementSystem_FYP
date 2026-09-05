@@ -9,6 +9,8 @@ import '../widgets/secondary_button.dart';
 import '../widgets/leave_queue_dialog.dart';
 import '../models/doctor.dart';
 import '../widgets/queue_progress_card.dart';
+import 'department_list_screen.dart';
+import 'qr_scan_screen.dart';
 
 class TrackQueueScreen extends StatefulWidget {
   final Doctor doctor;
@@ -32,12 +34,10 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
   bool _isRefreshing = false;
 
   Future<void> _handleRefresh() async {
-    if (_isRefreshing)
-      return; 
+    if (_isRefreshing) return;
 
     setState(() => _isRefreshing = true);
 
-    
     await Future.delayed(const Duration(milliseconds: 900));
 
     if (!mounted) return;
@@ -60,7 +60,6 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
     _currentPosition = widget.position;
     _totalAheadAtStart = widget.position - 1;
 
-   
     _simulationTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
       if (_currentPosition <= 1) {
         timer.cancel();
@@ -85,8 +84,10 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
   Future<void> _handleLeaveQueue() async {
     final bool? confirmed = await showLeaveQueueDialog(context);
     if (confirmed == true && mounted) {
-     
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const DepartmentListScreen()),
+        (route) => false, // Poori purani history hata do
+      );
     }
   }
 
@@ -155,8 +156,7 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
                   const SizedBox(height: 22),
 
                   QueueNumberProgress(
-                    totalInQueue:
-                        widget.position, 
+                    totalInQueue: widget.position,
                     currentPosition: _currentPosition,
                   ),
                   const SizedBox(height: 22),
@@ -194,7 +194,10 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
                     ],
                     textColor: AppColors.primary,
                     onPressed: () {
-                      Navigator.of(context).popUntil((route) => route.isFirst);
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const QRScanScreen()),
+                        (route) => false,
+                      );
                     },
                   ),
                   const SizedBox(height: 20),

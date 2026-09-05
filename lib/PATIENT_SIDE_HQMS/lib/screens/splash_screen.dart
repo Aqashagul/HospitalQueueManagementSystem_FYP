@@ -91,7 +91,7 @@ class _PulsingLogoState extends State<_PulsingLogo>
   Widget build(BuildContext context) {
     return ScaleTransition(
       scale: _scale,
-      child: Image.asset('assets/images/logo.png', width: 160, height: 160),
+      child: Image.asset('assets/images/app_logo.png', width: 160, height: 160),
     );
   }
 }

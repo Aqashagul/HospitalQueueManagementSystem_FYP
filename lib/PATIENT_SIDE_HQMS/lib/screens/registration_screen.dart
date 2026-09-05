@@ -5,7 +5,10 @@ import '../widgets/premium_text_field.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/step_progress_indicator.dart';
 import 'package:flutter/services.dart';
+import 'qr_scan_screen.dart';
 import 'otp_screen.dart';
+import 'terms_conditions_screen.dart';
+import 'package:flutter/gestures.dart';
 
 class RegistrationScreen extends StatefulWidget {
   final String scannedQueueId;
@@ -33,7 +36,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
     setState(() => _isSending = true);
 
-    
     await Future.delayed(const Duration(seconds: 1));
 
     if (!mounted) return;
@@ -65,7 +67,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => const QRScanScreen(),
+                          ),
+                        );
+                      },
                       icon: const Icon(
                         Icons.arrow_back,
                         color: AppColors.textDark,
@@ -278,28 +286,27 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         : PremiumButton(label: 'Send OTP', onPressed: _sendOtp),
                     const SizedBox(height: 14),
 
+
                     Center(
-                      child: RichText(
-                        text: TextSpan(
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textGrey,
-                          ),
-                          children: [
-                            const TextSpan(
-                              text: 'By continuing, you agree to our ',
-                            ),
-                            TextSpan(
-                              text: 'Terms & Conditions',
-                              style: const TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+  child: RichText(
+    text: TextSpan(
+      style: TextStyle(fontSize: 12, color: AppColors.textGrey),
+      children: [
+        const TextSpan(text: 'By continuing, you agree to our '),
+        TextSpan(
+          text: 'Terms & Conditions',
+          style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TermsConditionsScreen()),
+              );
+            },
+        ),
+      ],
+    ),
+  ),
+),
                     const SizedBox(height: 20),
 
                     // Bottom security banner

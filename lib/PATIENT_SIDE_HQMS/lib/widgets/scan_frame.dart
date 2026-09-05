@@ -47,7 +47,7 @@ class ScanFrame extends StatelessWidget {
                           ? Padding(
                               padding: const EdgeInsets.all(28),
                               child: Image.asset(
-                                'assets/images/demo_qr.png',
+                                'assets/images/PATIENT_SIDE images/icons/images/demo_qr.png',
                                 fit: BoxFit.contain,
                               ),
                             )

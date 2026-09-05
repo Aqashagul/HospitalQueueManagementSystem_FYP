@@ -133,7 +133,7 @@ final List<Doctor> sampleDoctors = [
     specialization: 'Neurologist',
     departmentId: 'd3',
     departmentName: 'Neurology',
-    imagePath: 'assets/images/PATIENT_SIDE images/icons/images/doctors/Dr_areba.jpg', // TODO: no "Dr_ayesha.jpg" in your assets — using Dr_areba.jpg as placeholder, replace with correct file
+    imagePath: 'assets/images/PATIENT_SIDE images/icons/images/doctors/Dr_ayesha.jpg',
     about: 'MBBS, FCPS (Neurology) with 10 years of experience in diagnosing and treating neurological disorders, migraines, and epilepsy.',
     experience: '10 years',
     availability: 'Mon - Fri, 9:00 AM - 2:00 PM',
@@ -181,7 +181,7 @@ final List<Doctor> sampleDoctors = [
     specialization: 'Orthopedic Surgeon',
     departmentId: 'd5',
     departmentName: 'Orthopedics',
-    imagePath: 'assets/images/PATIENT_SIDE images/icons/images/doctors/Dr_usman.jpg', // TODO: no "Dr_hassan.jpg" in your assets — using Dr_usman.jpg as placeholder, replace with correct file
+    imagePath: 'assets/images/PATIENT_SIDE images/icons/images/doctors/Dr_hassan.jpg',
     about: 'MBBS, FCPS (Orthopedic Surgery) with 11 years of experience in treating bone, joint, and muscle-related conditions, including fractures and sports injuries.',
     experience: '11 years',
     availability: 'Mon - Fri, 9:00 AM - 2:00 PM',
