@@ -3,13 +3,16 @@ import 'package:queue_management_system/core/app_typography.dart';
 import 'package:queue_management_system/widgets/resuable/rounded_card.dart';
 
 
-// StatCards for Departments, Doctors, Patients 
 class StatCard extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final Color iconBgColor;
   final String label;
   final String value;
+  final EdgeInsetsGeometry padding;
+  final double iconContainerPadding;
+  final double iconSize;
+  final double valueFontSize;
 
   const StatCard({
     super.key,
@@ -18,31 +21,35 @@ class StatCard extends StatelessWidget {
     required this.iconBgColor,
     required this.label,
     required this.value,
+    this.padding = const EdgeInsets.all(18),
+    this.iconContainerPadding = 12,
+    this.iconSize = 22,
+    this.valueFontSize = 22,
   });
 
   @override
   Widget build(BuildContext context) {
     return RoundedCard(
       color: Colors.white,
-      padding: const EdgeInsets.all(18),
+      padding: padding,
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.all(iconContainerPadding),
             decoration: BoxDecoration(
               color: iconBgColor,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: iconColor, size: 22),
+            child: Icon(icon, color: iconColor, size: iconSize),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: AppTypography.upperCaseText),
+                Text(label, style: AppTypography.upperCaseText, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
-                Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                Text(value, style: TextStyle(fontSize: valueFontSize, fontWeight: FontWeight.bold)),
               ],
             ),
           ),
@@ -51,6 +58,7 @@ class StatCard extends StatelessWidget {
     );
   }
 }
+
 
 // Initials avatar 
 class InitialsAvatar extends StatelessWidget {

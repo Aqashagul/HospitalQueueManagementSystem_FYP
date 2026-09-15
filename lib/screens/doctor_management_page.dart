@@ -13,7 +13,6 @@ import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
 
-
 class DoctorManagementPage extends StatefulWidget {
   const DoctorManagementPage({super.key});
 
@@ -66,7 +65,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             required: true,
             options: AppdataStore().departments.map((d) => d.name).toList(),
           ),
-          const FormFieldConfig(key: "fee", label: "Doctor Fee", type: FieldType.text, hint: "e.g. 1500", isNumeric: true), 
+          const FormFieldConfig(key: "fee", label: "Doctor Fee", type: FieldType.text, hint: "e.g. 1500", isNumeric: true),
           const FormFieldConfig(key: "experience", label: "Experience", type: FieldType.text, hint: "e.g. 12 Years", halfWidth: true),
           const FormFieldConfig(key: "workingHours", label: "Working Hours", type: FieldType.text, hint: "e.g. 9:00 AM - 5:00 PM", halfWidth: true),
           const FormFieldConfig(key: "qualification", label: "Qualification", type: FieldType.text, hint: "e.g. MBBS, FCPS"),
@@ -97,7 +96,6 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
   }
 
   // Opens the "Edit Doctor" form pre-filled with the given doctor's data.
-  // patientsCount is preserved as-is since it's not an editable field here.
   void _openEditDoctorDialog(DoctorModel doc) {
     showDialog(
       context: context,
@@ -142,14 +140,14 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
               name: values["name"],
               specialization: values["specialization"],
               department: values["department"],
-              patientsCount: doc.patientsCount, // preserved — not editable from this form
+              patientsCount: doc.patientsCount, 
               status: values["availability"],
               photoBytes: values["photo"],
               experience: values["experience"],
               workingHours: values["workingHours"],
               qualification: values["qualification"],
               tokenPrefix: values["tokenPrefix"],
-              fee: doc.fee, // preserved — not editable from this form
+              fee: doc.fee, 
             );
             doctorSearch.updateItems(AppdataStore().doctors);
           });
@@ -174,13 +172,12 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             icon: Icons.apartment_outlined,
             iconColor: const Color(0xFF56CCF2),
           ),
-
           DetailRow(
-  label: "Fee",
-  value: "Rs. ${doc.fee}",
-  icon: Icons.payments_outlined,
-  iconColor: const Color(0xFF6FCF97),
-),
+            label: "Fee",
+            value: "Rs. ${doc.fee}",
+            icon: Icons.payments_outlined,
+            iconColor: const Color(0xFF6FCF97),
+          ),
           DetailRow(
             label: "Patients",
             value: "${_activePatientsCount(doc.name)}",
@@ -199,7 +196,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             icon: Icons.event_available_outlined,
             iconColor: const Color(0xFFF2994A),
           ),
-          // Optional fields fall back to an em dash when not set.
+         
           DetailRow(
             label: "Experience",
             value: doc.experience?.isNotEmpty == true ? doc.experience! : "—",
@@ -230,7 +227,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
   }
 
   // Number of patients currently assigned to this doctor who are either
-  // waiting or in consultation (i.e. still occupying their queue).
+  // waiting or in consultation 
   int _activePatientsCount(String doctorName) {
     return AppdataStore().patient
         .where((p) =>
@@ -277,197 +274,57 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
           const Positioned.fill(child: BgBoxes()),
           SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                Text("Doctor Management", style: AppTypography.title),
-                 const Spacer(), 
-    const LiveDateTimeWidget(),],),
-                const SizedBox(height: 6),
-                Text(
-                  "Manage doctors, assign departments, monitor availability, and maintain doctor records.",
-                  style: AppTypography.subtitle,
-                ),
-                const SizedBox(height: 24),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isMobile = constraints.maxWidth < 700; 
 
-                // Summary stat cards: total, available, unavailable, free
-                Row(
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.groups_outlined,
-                        iconColor: AppColors.primaryPurple,
-                        iconBgColor: const Color(0xFFE4D9F9),
-                        label: "Total Doctors",
-                        value: "$totalDoctors",
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.check_circle_outline,
-                        iconColor: const Color(0xFF2E7D32),
-                        iconBgColor: const Color(0xFFD4EDDA),
-                        label: "Available Doctors",
-                        value: "$availableCount",
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.work_outline,
-                        iconColor: const Color(0xFFB8860B),
-                        iconBgColor: const Color(0xFFFAF3D0),
-                        label: "Unavailable",
-                        value: "$unavailableCount",
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.event_available_outlined,
-                        iconColor: const Color(0xFF2E7D32),
-                        iconBgColor: const Color(0xFFD4EDDA),
-                        label: "Free",
-                        value: "$freeCount",
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Search bar, department/availability filters, and add-doctor button
-                Row(
-                  children: [
-                    Expanded(
-                      child: DashboardSearchBar(
-                        hintText: "Search doctor...",
-                        onChanged: (query) => doctorSearch.search(query),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    _buildDropdown(
-                      value: selectedDepartmentFilter,
-                      items: [
-                        "Department",
-                        ...AppdataStore().departments.map((d) => d.name),
-                      ],
-                      onChanged: (value) {
-                        setState(() => selectedDepartmentFilter = value!);
-                      },
-                    ),
-                    const SizedBox(width: 12),
-                    _buildDropdown(
-                      value: selectedAvailabilityFilter,
-                      items: const ["Availability", "Available", "Unavailable"],
-                      onChanged: (value) {
-                        setState(() => selectedAvailabilityFilter = value!);
-                      },
-                    ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      onPressed: _openAddDoctorDialog,
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text("Add Doctor"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryPurple,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Doctor records table
-                DataTableCard<DoctorModel>(
-                  items: filteredDoctors,
-                  emptyMessage: "No doctors added yet",
-                  columns: [
-                    TableColumn<DoctorModel>(
-                      label: "Doctor",
-                      flex: 3,
-                      cellBuilder: (doc) => Row(
+                    
+                    if (!isMobile) ...[
+                      Row(
                         children: [
-                          DoctorAvatar(doctor: doc),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              doc.name,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                            ),
-                          ),
+                          Text("Doctor Management", style: AppTypography.title),
+                          const Spacer(),
+                          const LiveDateTimeWidget(),
                         ],
                       ),
-                    ),
-                    TableColumn<DoctorModel>(
-                      label: "Specialization",
-                      flex: 2,
-                      cellBuilder: (doc) =>
-                          Text(doc.specialization, style: const TextStyle(fontSize: 14)),
-                    ),
-                    TableColumn<DoctorModel>(
-                      label: "Department",
-                      flex: 2,
-                      cellBuilder: (doc) =>
-                          Text(doc.department, style: const TextStyle(fontSize: 14)),
-                    ),
-                    TableColumn<DoctorModel>(
-                      label: "Patients",
-                      flex: 1,
-                      cellBuilder: (doc) =>
-                          Text("${_activePatientsCount(doc.name)}", style: const TextStyle(fontSize: 14)),
-                    ),
-                    TableColumn<DoctorModel>(
-                      label: "Availability",
-                      flex: 2,
-                      cellBuilder: (doc) => Align(
-                        alignment: Alignment.centerLeft,
-                        child: StatusPill(status: doc.status),
+                      const SizedBox(height: 6),
+                      Text(
+                        "Manage doctors, assign departments, monitor availability, and maintain doctor records.",
+                        style: AppTypography.subtitle,
                       ),
+                      const SizedBox(height: 24),
+                    ] else
+                      const SizedBox(height: 15),
+
+                    // Summary stat cards: total, available, unavailable, free
+                    _buildStatCardsSection(
+                      isMobile: isMobile,
+                      totalDoctors: totalDoctors,
+                      availableCount: availableCount,
+                      unavailableCount: unavailableCount,
+                      freeCount: freeCount,
                     ),
-                    TableColumn<DoctorModel>(
-                      label: "Actions",
-                      flex: 2,
-                      cellBuilder: (doc) => Row(
-                        children: [
-                          // View details
-                          GestureDetector(
-                            onTap: () => _openViewDoctorDialog(doc),
-                            child: Icon(Icons.visibility_outlined, size: 18, color: Colors.grey.shade700),
-                          ),
-                          const SizedBox(width: 14),
-                          // Edit doctor
-                          GestureDetector(
-                            onTap: () => _openEditDoctorDialog(doc),
-                            child: Icon(Icons.edit_outlined, size: 18, color: Colors.grey.shade700),
-                          ),
-                          const SizedBox(width: 14),
-                          // Remove doctor record — no confirmation dialog currently
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                AppdataStore().doctors.remove(doc);
-                                doctorSearch.updateItems(AppdataStore().doctors);
-                              });
-                            },
-                            child: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                          ),
-                        ],
-                      ),
-                    ),
+                    const SizedBox(height: 24),
+
+                    // Search bar, department/availability filters, and add-doctor button
+                    _buildToolbar(isMobile: isMobile),
+                    const SizedBox(height: 24),
+
+                    // Doctor records table
+                    _buildTable(filteredDoctors, isMobile: isMobile),
+
+                    const SizedBox(height: 80),
                   ],
-                ),
-                const SizedBox(height: 80),
-              ],
+                );
+              },
             ),
           ),
         ],
       ),
-      // Secondary entry point for adding a doctor (mirrors the "Add Doctor" button above).
+      // Secondary entry point for adding a doctor
       floatingActionButton: FloatingActionButton(
         onPressed: _openAddDoctorDialog,
         backgroundColor: AppColors.primaryPurple,
@@ -476,10 +333,277 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     );
   }
 
+  // 4 stat cards 
+  Widget _buildStatCardsSection({
+    required bool isMobile,
+    required int totalDoctors,
+    required int availableCount,
+    required int unavailableCount,
+    required int freeCount,
+  }) {
+    final cardPadding = isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18);
+    final cardIconPadding = isMobile ? 8.0 : 12.0;
+    final cardIconSize = isMobile ? 18.0 : 22.0;
+    final cardValueFontSize = isMobile ? 18.0 : 22.0;
+
+    final card1 = StatCard(
+      icon: Icons.groups_outlined,
+      iconColor: AppColors.primaryPurple,
+      iconBgColor: const Color(0xFFE4D9F9),
+      label: "Total Doctors",
+      value: "$totalDoctors",
+      padding: cardPadding,
+      iconContainerPadding: cardIconPadding,
+      iconSize: cardIconSize,
+      valueFontSize: cardValueFontSize,
+    );
+    final card2 = StatCard(
+      icon: Icons.check_circle_outline,
+      iconColor: const Color(0xFF2E7D32),
+      iconBgColor: const Color(0xFFD4EDDA),
+      label: "Available Doctors",
+      value: "$availableCount",
+      padding: cardPadding,
+      iconContainerPadding: cardIconPadding,
+      iconSize: cardIconSize,
+      valueFontSize: cardValueFontSize,
+    );
+    final card3 = StatCard(
+      icon: Icons.work_outline,
+      iconColor: const Color(0xFFB8860B),
+      iconBgColor: const Color(0xFFFAF3D0),
+      label: "Unavailable",
+      value: "$unavailableCount",
+      padding: cardPadding,
+      iconContainerPadding: cardIconPadding,
+      iconSize: cardIconSize,
+      valueFontSize: cardValueFontSize,
+    );
+    final card4 = StatCard(
+      icon: Icons.event_available_outlined,
+      iconColor: const Color(0xFF2E7D32),
+      iconBgColor: const Color(0xFFD4EDDA),
+      label: "Free",
+      value: "$freeCount",
+      padding: cardPadding,
+      iconContainerPadding: cardIconPadding,
+      iconSize: cardIconSize,
+      valueFontSize: cardValueFontSize,
+    );
+
+    if (isMobile) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(child: card1),
+              const SizedBox(width: 8),
+              Expanded(child: card2),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: card3),
+              const SizedBox(width: 8),
+              Expanded(child: card4),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(child: card1),
+        const SizedBox(width: 16),
+        Expanded(child: card2),
+        const SizedBox(width: 16),
+        Expanded(child: card3),
+        const SizedBox(width: 16),
+        Expanded(child: card4),
+      ],
+    );
+  }
+
+  // Search bar + filters + add button
+  Widget _buildToolbar({required bool isMobile}) {
+    final searchBar = DashboardSearchBar(
+      hintText: "Search doctor...",
+      onChanged: (query) => doctorSearch.search(query),
+    );
+
+    final addButton = ElevatedButton.icon(
+      onPressed: _openAddDoctorDialog,
+      icon: const Icon(Icons.add, size: 18),
+      label: const Text("Add Doctor"),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primaryPurple,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+
+    if (isMobile) {
+      // fillWidth: true — these sit inside Expanded(), so isExpanded is safe here.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          searchBar,
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildDropdown(
+                  value: selectedDepartmentFilter,
+                  items: [
+                    "Department",
+                    ...AppdataStore().departments.map((d) => d.name),
+                  ],
+                  onChanged: (value) => setState(() => selectedDepartmentFilter = value!),
+                  fillWidth: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDropdown(
+                  value: selectedAvailabilityFilter,
+                  items: const ["Availability", "Available", "Unavailable"],
+                  onChanged: (value) => setState(() => selectedAvailabilityFilter = value!),
+                  fillWidth: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: addButton),
+        ],
+      );
+    }
+
+    // fillWidth: false (default) — these sit directly in a Row without
+    // Expanded, so they must size to their content, not try to fill infinite width.
+    return Row(
+      children: [
+        Expanded(child: searchBar),
+        const SizedBox(width: 12),
+        _buildDropdown(
+          value: selectedDepartmentFilter,
+          items: [
+            "Department",
+            ...AppdataStore().departments.map((d) => d.name),
+          ],
+          onChanged: (value) => setState(() => selectedDepartmentFilter = value!),
+        ),
+        const SizedBox(width: 12),
+        _buildDropdown(
+          value: selectedAvailabilityFilter,
+          items: const ["Availability", "Available", "Unavailable"],
+          onChanged: (value) => setState(() => selectedAvailabilityFilter = value!),
+        ),
+        const SizedBox(width: 12),
+        addButton,
+      ],
+    );
+  }
+
+  
+  
+  Widget _buildTable(List<DoctorModel> filteredDoctors, {required bool isMobile}) {
+    final table = DataTableCard<DoctorModel>(
+      items: filteredDoctors,
+      emptyMessage: "No doctors added yet",
+      columns: [
+        TableColumn<DoctorModel>(
+          label: "Doctor",
+          flex: 3,
+          cellBuilder: (doc) => Row(
+            children: [
+              DoctorAvatar(doctor: doc),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  doc.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+        TableColumn<DoctorModel>(
+          label: "Specialization",
+          flex: 2,
+          cellBuilder: (doc) =>
+              Text(doc.specialization, style: const TextStyle(fontSize: 14)),
+        ),
+        TableColumn<DoctorModel>(
+          label: "Department",
+          flex: 2,
+          cellBuilder: (doc) =>
+              Text(doc.department, style: const TextStyle(fontSize: 14)),
+        ),
+        TableColumn<DoctorModel>(
+          label: "Patients",
+          flex: 1,
+          cellBuilder: (doc) =>
+              Text("${_activePatientsCount(doc.name)}", style: const TextStyle(fontSize: 14)),
+        ),
+        TableColumn<DoctorModel>(
+          label: "Availability",
+          flex: 2,
+          cellBuilder: (doc) => Align(
+            alignment: Alignment.centerLeft,
+            child: StatusPill(status: doc.status),
+          ),
+        ),
+        TableColumn<DoctorModel>(
+          label: "Actions",
+          flex: 2,
+          cellBuilder: (doc) => Row(
+            children: [
+              // View details
+              GestureDetector(
+                onTap: () => _openViewDoctorDialog(doc),
+                child: Icon(Icons.visibility_outlined, size: 18, color: Colors.grey.shade700),
+              ),
+              const SizedBox(width: 14),
+              // Edit doctor
+              GestureDetector(
+                onTap: () => _openEditDoctorDialog(doc),
+                child: Icon(Icons.edit_outlined, size: 18, color: Colors.grey.shade700),
+              ),
+              const SizedBox(width: 14),
+              // Remove doctor record — no confirmation dialog currently
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    AppdataStore().doctors.remove(doc);
+                    doctorSearch.updateItems(AppdataStore().doctors);
+                  });
+                },
+                child: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (!isMobile) return table;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SizedBox(width: 900, child: table), 
+    );
+  }
+
   Widget _buildDropdown({
     required String value,
     required List<String> items,
     required ValueChanged<String?> onChanged,
+    bool fillWidth = false, 
   }) {
     return Container(
       height: 48,
@@ -492,11 +616,16 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
+          isExpanded: fillWidth, 
           icon: const Icon(Icons.keyboard_arrow_down, size: 20),
           items: items
               .map((item) => DropdownMenuItem(
                     value: item,
-                    child: Text(item, style: AppTypography.normaltext),
+                    child: Text(
+                      item,
+                      style: AppTypography.normaltext,
+                      overflow: TextOverflow.ellipsis, 
+                    ),
                   ))
               .toList(),
           onChanged: onChanged,

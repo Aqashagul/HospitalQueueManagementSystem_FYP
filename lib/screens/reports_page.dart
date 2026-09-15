@@ -51,178 +51,235 @@ class _ReportsPageState extends State<ReportsPage> {
           const Positioned.fill(child: BgBoxes()),
           SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                // Page title 
-                Text("Reports & Analytics", style: AppTypography.title),
-                 const Spacer(), 
-    const LiveDateTimeWidget(),],),
-                const SizedBox(height: 6),
-                Text(
-                  "Analyze queue performance, patient flow, waiting times, and operational efficiency.",
-                  style: AppTypography.subtitle,
-                ),
-                const SizedBox(height: 24),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isMobile = constraints.maxWidth < 700;
 
-                // Date-range filter dropdown, wrapped in a white card
-                RoundedCard(
-                  color: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  child: Row(
-                    children: [
-                      _buildFilterDropdown(
-                        icon: Icons.calendar_today_outlined,
-                        value: selectedRange,
-                        items: const ["Last 7 Days", "Last 30 Days", "This Month"],
-                        onChanged: (v) => setState(() => selectedRange = v!),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Summary stat cards: total, completed, cancelled, avg wait, completion rate
-                Row(
-                  children: [
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.confirmation_number_outlined,
-                        iconColor: AppColors.primaryPurple,
-                        iconBgColor: const Color(0xFFE4D9F9),
-                        label: "Total Tokens",
-                        value: "$totalTokens",
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.check_circle_outline,
-                        iconColor: const Color(0xFF2E7D32),
-                        iconBgColor: const Color(0xFFD4EDDA),
-                        label: "Completed",
-                        value: "$completedCount",
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.cancel_outlined,
-                        iconColor: const Color(0xFFC62828),
-                        iconBgColor: const Color(0xFFF8D7DA),
-                        label: "Cancelled",
-                        value: "$cancelledCount",
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.hourglass_empty,
-                        iconColor: const Color(0xFFB8860B),
-                        iconBgColor: const Color(0xFFFAF3D0),
-                        label: "Avg Waiting",
-                        value: "$avgWaitingMinutes min",
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: StatCard(
-                        icon: Icons.trending_up,
-                        iconColor: AppColors.primaryPurple,
-                        iconBgColor: const Color(0xFFE4D9F9),
-                        label: "Completion",
-                        value: "$completionPercent%",
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-
-                // Weekly patient flow chart (7-day trend)
-                RoundedCard(
-                  color: Colors.white,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SevenDayPatientsChart(),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Peak hour + department distribution charts, side by side
-                Row(
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: RoundedCard(
-                        color: Colors.white,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Peak Hour Patient Count",
-                                style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 16),
-                            const PeakHourChart(),
-                          ],
-                        ),
+                   
+                    if (!isMobile) ...[
+                      Row(
+                        children: [
+                          Text("Reports & Analytics", style: AppTypography.title),
+                          const Spacer(),
+                          const LiveDateTimeWidget(),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "Analyze queue performance, patient flow, waiting times, and operational efficiency.",
+                        style: AppTypography.subtitle,
+                      ),
+                      const SizedBox(height: 24),
+                    ] else
+                      const SizedBox(height: 15),
+
+                    // Date-range filter dropdown
+                          _buildFilterDropdown(
+                            icon: Icons.calendar_today_outlined,
+                            value: selectedRange,
+                            items: const ["Last 7 Days", "Last 30 Days", "This Month"],
+                            onChanged: (v) => setState(() => selectedRange = v!),
+                          ),
+                        
+                    const SizedBox(height: 20),
+
+                    // Summary stat cards: total, completed, cancelled, avg wait, completion rate
+                   if (!isMobile) ...[
+  _buildStatCardsSection(
+    isMobile: isMobile,
+    totalTokens: totalTokens,
+    completedCount: completedCount,
+    cancelledCount: cancelledCount,
+    avgWaitingMinutes: avgWaitingMinutes,
+    completionPercent: completionPercent,
+  ),
+  const SizedBox(height: 28),
+],
+
+                    // Weekly patient flow chart (7-day trend)
+                    RoundedCard(
+                      color: Colors.white,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SevenDayPatientsChart(),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: RoundedCard(
-                        color: Colors.white,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Patients by Department",
-                                style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 16),
-                            const PatientsByDepartmentChart(),
-                          ],
-                        ),
+                    const SizedBox(height: 20),
+
+                    // Peak hour + department distribution charts —
+                    // desktop: side by side. Mobile: stacked full-width.
+                    isMobile
+                        ? Column(
+                            children: [
+                              RoundedCard(
+                                color: Colors.white,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Peak Hour Patient Count",
+                                        style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
+                                    const SizedBox(height: 16),
+                                    const PeakHourChart(),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              RoundedCard(
+                                color: Colors.white,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Patients by Department",
+                                        style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
+                                    const SizedBox(height: 16),
+                                    const PatientsByDepartmentChart(),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: RoundedCard(
+                                  color: Colors.white,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text("Peak Hour Patient Count",
+                                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
+                                      const SizedBox(height: 16),
+                                      const PeakHourChart(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 20),
+                              Expanded(
+                                child: RoundedCard(
+                                  color: Colors.white,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text("Patients by Department",
+                                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
+                                      const SizedBox(height: 16),
+                                      const PatientsByDepartmentChart(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                    const SizedBox(height: 20),
+
+                    // Completed vs cancelled comparison chart
+                    RoundedCard(
+                      color: Colors.white,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Completed vs Cancelled Queues",
+                              style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 16),
+                          const CompletedVsCancelledChart(),
+                        ],
                       ),
                     ),
+                    const SizedBox(height: 20),
+
+                    // Doctor workload breakdown chart
+                    RoundedCard(
+                      color: Colors.white,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Doctor Workload",
+                              style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 16),
+                          const DoctorWorkloadChart(),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 80),
                   ],
-                ),
-                const SizedBox(height: 20),
-
-                // Completed vs cancelled comparison chart
-                RoundedCard(
-                  color: Colors.white,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Completed vs Cancelled Queues",
-                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 16),
-                      const CompletedVsCancelledChart(),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Doctor workload breakdown chart
-                RoundedCard(
-                  color: Colors.white,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Doctor Workload",
-                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 16),
-                      const DoctorWorkloadChart(),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 80),
-              ],
+                );
+              },
             ),
           ),
         ],
       ),
+    );
+  }
+
+  // 5 stat cards 
+  Widget _buildStatCardsSection({
+    required bool isMobile,
+    required int totalTokens,
+    required int completedCount,
+    required int cancelledCount,
+    required int avgWaitingMinutes,
+    required int completionPercent,
+  }) {
+    final card1 = StatCard(
+      icon: Icons.confirmation_number_outlined,
+      iconColor: AppColors.primaryPurple,
+      iconBgColor: const Color(0xFFE4D9F9),
+      label: "Total Tokens",
+      value: "$totalTokens",
+    );
+    final card2 = StatCard(
+      icon: Icons.check_circle_outline,
+      iconColor: const Color(0xFF2E7D32),
+      iconBgColor: const Color(0xFFD4EDDA),
+      label: "Completed",
+      value: "$completedCount",
+    );
+    final card3 = StatCard(
+      icon: Icons.cancel_outlined,
+      iconColor: const Color(0xFFC62828),
+      iconBgColor: const Color(0xFFF8D7DA),
+      label: "Cancelled",
+      value: "$cancelledCount",
+    );
+    final card4 = StatCard(
+      icon: Icons.hourglass_empty,
+      iconColor: const Color(0xFFB8860B),
+      iconBgColor: const Color(0xFFFAF3D0),
+      label: "Avg Waiting",
+      value: "$avgWaitingMinutes min",
+    );
+    final card5 = StatCard(
+      icon: Icons.trending_up,
+      iconColor: AppColors.primaryPurple,
+      iconBgColor: const Color(0xFFE4D9F9),
+      label: "Completion",
+      value: "$completionPercent%",
+    );
+
+    if (isMobile) {
+  return const SizedBox.shrink();
+}
+
+    return Row(
+      children: [
+        Expanded(child: card1),
+        const SizedBox(width: 14),
+        Expanded(child: card2),
+        const SizedBox(width: 14),
+        Expanded(child: card3),
+        const SizedBox(width: 14),
+        Expanded(child: card4),
+        const SizedBox(width: 14),
+        Expanded(child: card5),
+      ],
     );
   }
 
@@ -251,8 +308,14 @@ class _ReportsPageState extends State<ReportsPage> {
               value: value,
               icon: const Icon(Icons.keyboard_arrow_down, size: 18),
               items: items
-                  .map((item) =>
-                      DropdownMenuItem(value: item, child: Text(item, style: const TextStyle(fontSize: 14))))
+                  .map((item) => DropdownMenuItem(
+                        value: item,
+                        child: Text(
+                          item,
+                          style: const TextStyle(fontSize: 14),
+                          overflow: TextOverflow.ellipsis, 
+                        ),
+                      ))
                   .toList(),
               onChanged: onChanged,
             ),

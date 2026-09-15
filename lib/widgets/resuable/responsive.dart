@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 
-// Single source of truth for screen-size cutoffs =====
-// Change these numbers once, and every page that uses them updates together.
+
 class Breakpoints {
   static const double mobile = 600;
   static const double tablet = 1000;
 }
 
-// Whole-screen checks — use these for "is the app in mobile mode" =====
-// decisions like AppShell's sidebar vs hamburger menu.
+
 extension ResponsiveContext on BuildContext {
   double get screenWidth => MediaQuery.of(this).size.width;
 
@@ -17,10 +15,7 @@ extension ResponsiveContext on BuildContext {
   bool get isDesktop => screenWidth >= Breakpoints.tablet;
 }
 
-// Area-specific layout switching — use this INSIDE a page when you
-// want a particular section (not the whole screen) to adapt to however
-// much space it's actually been given (e.g. inside a card, a column, a
-// split-panel layout where the available width isn't the full screen). =====
+
 class ResponsiveBuilder extends StatelessWidget {
   final Widget Function(BuildContext context) mobile;
   final Widget Function(BuildContext context)? tablet;
@@ -43,7 +38,7 @@ class ResponsiveBuilder extends StatelessWidget {
           return mobile(context);
         }
         if (width < Breakpoints.tablet) {
-          return (tablet ?? desktop)(context); // tablet layout not given? fall back to desktop
+          return (tablet ?? desktop)(context); 
         }
         return desktop(context);
       },
@@ -51,9 +46,7 @@ class ResponsiveBuilder extends StatelessWidget {
   }
 }
 
-// Pick a plain value (not a widget) based on screen width — handy for
-// things like column counts, padding, or font sizes that change per size
-// without needing a full ResponsiveBuilder. =====
+
 T responsiveValue<T>(
   BuildContext context, {
   required T mobile,

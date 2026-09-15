@@ -111,7 +111,7 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
   label: "Assign Doctor",
   type: FieldType.dropdown,
   required: true,
-  emptyOptionsMessage: "No doctors available in this department", // ADD THIS
+  emptyOptionsMessage: "No doctors available in this department", 
   dependentOptions: (currentValues) {
     final selectedDepartment = currentValues["department"];
     return AppdataStore().doctors
@@ -196,301 +196,412 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
             if (index == -1) return;
 
             AppdataStore().patient[index] = PatientModel(
-              token: patient.token, // preserved — token never changes after creation
+              token: patient.token, 
               name: values["name"],
               department: values["department"],
               doctor: values["doctor"],
               phoneNumber: values["phone"],
-              status: patient.status, // preserved — status isn't editable from this form
-              registrationTime: patient.registrationTime, // preserved
+              status: patient.status, 
+              registrationTime: patient.registrationTime, 
             );
           });
         },
       ),
     );
   }
-@override
-Widget build(BuildContext context) {
-  final List<PatientModel> allPatients = AppdataStore().patient;
 
-  // Sort by registration time — most recently registered first.
-  List<PatientModel> patients = List<PatientModel>.from(allPatients)
-    ..sort((a, b) => b.registrationTime.compareTo(a.registrationTime));
+  @override
+  Widget build(BuildContext context) {
+    final List<PatientModel> allPatients = AppdataStore().patient;
 
-  // Apply department filter.
-  if (selectedDepartmentFilter != "Department") {
-    patients = patients.where((p) => p.department == selectedDepartmentFilter).toList();
+    // Sort by registration time — most recently registered first.
+    List<PatientModel> patients = List<PatientModel>.from(allPatients)
+      ..sort((a, b) => b.registrationTime.compareTo(a.registrationTime));
+
+    // Apply department filter.
+    if (selectedDepartmentFilter != "Department") {
+      patients = patients.where((p) => p.department == selectedDepartmentFilter).toList();
+    }
+
+    // Apply status filter.
+    if (selectedStatusFilter != "Status") {
+      patients = patients
+          .where((p) => p.status.toLowerCase() == selectedStatusFilter.toLowerCase())
+          .toList();
+    }
+
+    // Intersect with the current search query — matched by token, since
+    // that's unique per patient (unlike name, which can repeat).
+    final searchedTokens = patientSearch.filteredItems.map((p) => p.token).toSet();
+    patients = patients.where((p) => searchedTokens.contains(p.token)).toList();
+
+    final int totalPatients = allPatients.length;
+    final int waitingCount =
+        allPatients.where((p) => p.status.toLowerCase() == "waiting").length;
+    final int inConsultationCount =
+        allPatients.where((p) => p.status.toLowerCase() == "in consultation").length;
+    final int completedCount =
+        allPatients.where((p) => p.status.toLowerCase() == "completed").length;
+
+    final departmentOptions = [
+      "Department",
+      ...AppdataStore().departments.map((d) => d.name),
+    ];
+
+    return Scaffold(
+      backgroundColor: AppColors.bgPrimary,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: BgBoxes()),
+
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isMobile = constraints.maxWidth < 700; 
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    
+                    if (!isMobile) ...[
+                      Row(
+                        children: [
+                          Text("Patient Management", style: AppTypography.title),
+                          const Spacer(),
+                          const LiveDateTimeWidget(),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "View, search, and manage patient records and their queue status.",
+                        style: AppTypography.subtitle,
+                      ),
+                      const SizedBox(height: 24),
+                    ] else
+                      const SizedBox(height: 15),
+
+                    // Summary stat cards: total, waiting, in consultation, completed
+                    // — always computed from the full unfiltered list.
+                    _buildStatCardsSection(
+                      isMobile: isMobile,
+                      totalPatients: totalPatients,
+                      waitingCount: waitingCount,
+                      inConsultationCount: inConsultationCount,
+                      completedCount: completedCount,
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Search bar, department/status filters, and add-patient button
+                    _buildToolbar(isMobile: isMobile, departmentOptions: departmentOptions),
+                    const SizedBox(height: 24),
+
+                    // Patient records table
+                    _buildTable(patients, isMobile: isMobile),
+
+                    const SizedBox(height: 80),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      // Secondary entry point for adding a patient 
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          _openAddPatientDialog();
+        },
+        backgroundColor: AppColors.primaryPurple,
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
   }
 
-  // Apply status filter.
-  if (selectedStatusFilter != "Status") {
-    patients = patients
-        .where((p) => p.status.toLowerCase() == selectedStatusFilter.toLowerCase())
-        .toList();
-  }
+  // 4 stat cards
+  Widget _buildStatCardsSection({
+    required bool isMobile,
+    required int totalPatients,
+    required int waitingCount,
+    required int inConsultationCount,
+    required int completedCount,
+  }) {
+    final cardPadding = isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18);
+    final cardIconPadding = isMobile ? 8.0 : 12.0;
+    final cardIconSize = isMobile ? 18.0 : 22.0;
+    final cardValueFontSize = isMobile ? 18.0 : 22.0;
 
-  // Intersect with the current search query — matched by token, since
-  // that's unique per patient (unlike name, which can repeat).
-  final searchedTokens = patientSearch.filteredItems.map((p) => p.token).toSet();
-  patients = patients.where((p) => searchedTokens.contains(p.token)).toList();
+    final card1 = StatCard(
+      icon: Icons.people_outline,
+      iconColor: AppColors.primaryPurple,
+      iconBgColor: const Color(0xFFE4D9F9),
+      label: "Total Patients",
+      value: "$totalPatients",
+      padding: cardPadding,
+      iconContainerPadding: cardIconPadding,
+      iconSize: cardIconSize,
+      valueFontSize: cardValueFontSize,
+    );
+    final card2 = StatCard(
+      icon: Icons.hourglass_empty,
+      iconColor: const Color(0xFFB8860B),
+      iconBgColor: const Color(0xFFFAF3D0),
+      label: "Waiting",
+      value: "$waitingCount",
+      padding: cardPadding,
+      iconContainerPadding: cardIconPadding,
+      iconSize: cardIconSize,
+      valueFontSize: cardValueFontSize,
+    );
+    final card3 = StatCard(
+      icon: Icons.medical_information_outlined,
+      iconColor: const Color(0xFF3B82C4),
+      iconBgColor: const Color(0xFFD6EAF8),
+      label: "In Consultation",
+      value: "$inConsultationCount",
+      padding: cardPadding,
+      iconContainerPadding: cardIconPadding,
+      iconSize: cardIconSize,
+      valueFontSize: cardValueFontSize,
+    );
+    final card4 = StatCard(
+      icon: Icons.check_circle_outline,
+      iconColor: const Color(0xFF2E7D32),
+      iconBgColor: const Color(0xFFD4EDDA),
+      label: "Completed",
+      value: "$completedCount",
+      padding: cardPadding,
+      iconContainerPadding: cardIconPadding,
+      iconSize: cardIconSize,
+      valueFontSize: cardValueFontSize,
+    );
 
-  final int totalPatients = allPatients.length;
-  final int waitingCount =
-      allPatients.where((p) => p.status.toLowerCase() == "waiting").length;
-  final int inConsultationCount =
-      allPatients.where((p) => p.status.toLowerCase() == "in consultation").length;
-  final int completedCount =
-      allPatients.where((p) => p.status.toLowerCase() == "completed").length;
-
-  final departmentOptions = [
-    "Department",
-    ...AppdataStore().departments.map((d) => d.name),
-  ];
-
-  return Scaffold(
-    backgroundColor: AppColors.bgPrimary,
-    body: Stack(
-      children: [
-        const Positioned.fill(child: BgBoxes()),
-
-        SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    if (isMobile) {
+      return Column(
+        children: [
+          Row(
             children: [
-              Row(children: [
-                // Header
-                Text(
-                  "Patient Management",
-                  style: AppTypography.title,
+              Expanded(child: card1),
+              const SizedBox(width: 8),
+              Expanded(child: card2),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: card3),
+              const SizedBox(width: 8),
+              Expanded(child: card4),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(child: card1),
+        const SizedBox(width: 16),
+        Expanded(child: card2),
+        const SizedBox(width: 16),
+        Expanded(child: card3),
+        const SizedBox(width: 16),
+        Expanded(child: card4),
+      ],
+    );
+  }
+
+  // Search bar + filters + add button
+  Widget _buildToolbar({
+    required bool isMobile,
+    required List<String> departmentOptions,
+  }) {
+    final searchBar = DashboardSearchBar(
+      hintText: "Search patient...",
+      onChanged: (query) => patientSearch.search(query),
+    );
+
+    final addButton = ElevatedButton.icon(
+      onPressed: () {
+        _openAddPatientDialog();
+      },
+      icon: const Icon(Icons.add, size: 18),
+      label: const Text("Add Patient"),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primaryPurple,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+
+    if (isMobile) {
+      // fillWidth: true — these sit inside Expanded(), so isExpanded is safe here.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          searchBar,
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildDropdown(
+                  value: selectedDepartmentFilter,
+                  items: departmentOptions,
+                  onChanged: (value) => setState(() => selectedDepartmentFilter = value!),
+                  fillWidth: true,
                 ),
-                const Spacer(),
-                const LiveDateTimeWidget(),
-              ]),
-              const SizedBox(height: 6),
-              Text(
-                "View, search, and manage patient records and their queue status.",
-                style: AppTypography.subtitle,
               ),
-              const SizedBox(height: 24),
-
-              // Summary stat cards: total, waiting, in consultation, completed
-              // — always computed from the full unfiltered list.
-              Row(
-                children: [
-                  Expanded(
-                    child: StatCard(
-                      icon: Icons.people_outline,
-                      iconColor: AppColors.primaryPurple,
-                      iconBgColor: const Color(0xFFE4D9F9),
-                      label: "Total Patients",
-                      value: "$totalPatients",
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: StatCard(
-                      icon: Icons.hourglass_empty,
-                      iconColor: const Color(0xFFB8860B),
-                      iconBgColor: const Color(0xFFFAF3D0),
-                      label: "Waiting",
-                      value: "$waitingCount",
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: StatCard(
-                      icon: Icons.medical_information_outlined,
-                      iconColor: const Color(0xFF3B82C4),
-                      iconBgColor: const Color(0xFFD6EAF8),
-                      label: "In Consultation",
-                      value: "$inConsultationCount",
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: StatCard(
-                      icon: Icons.check_circle_outline,
-                      iconColor: const Color(0xFF2E7D32),
-                      iconBgColor: const Color(0xFFD4EDDA),
-                      label: "Completed",
-                      value: "$completedCount",
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDropdown(
+                  value: selectedStatusFilter,
+                  items: const ["Status", "Waiting", "In Consultation", "Completed"],
+                  onChanged: (value) => setState(() => selectedStatusFilter = value!),
+                  fillWidth: true,
+                ),
               ),
-              const SizedBox(height: 24),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: addButton),
+        ],
+      );
+    }
 
-              // Search bar, department/status filters, and add-patient button
-              Row(
-                children: [
-                  Expanded(
-                    child: DashboardSearchBar(
-                      hintText: "Search patient...",
-                      onChanged: (query) => patientSearch.search(query),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  _buildDropdown(
-                    value: selectedDepartmentFilter,
-                    items: departmentOptions,
-                    onChanged: (value) {
-                      setState(() => selectedDepartmentFilter = value!);
-                    },
-                  ),
-                  const SizedBox(width: 12),
-                  _buildDropdown(
-                    value: selectedStatusFilter,
-                    items: const [
-                      "Status",
-                      "Waiting",
-                      "In Consultation",
-                      "Completed",
-                    ],
-                    onChanged: (value) {
-                      setState(() => selectedStatusFilter = value!);
-                    },
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      _openAddPatientDialog();
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text("Add Patient"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryPurple,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 16,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ],
+    // fillWidth: false (default) — these sit directly in a Row without
+    // Expanded, so they must size to their content, not try to fill infinite width.
+    return Row(
+      children: [
+        Expanded(child: searchBar),
+        const SizedBox(width: 12),
+        _buildDropdown(
+          value: selectedDepartmentFilter,
+          items: departmentOptions,
+          onChanged: (value) => setState(() => selectedDepartmentFilter = value!),
+        ),
+        const SizedBox(width: 12),
+        _buildDropdown(
+          value: selectedStatusFilter,
+          items: const ["Status", "Waiting", "In Consultation", "Completed"],
+          onChanged: (value) => setState(() => selectedStatusFilter = value!),
+        ),
+        const SizedBox(width: 12),
+        addButton,
+      ],
+    );
+  }
+
+  
+  Widget _buildTable(List<PatientModel> patients, {required bool isMobile}) {
+    final table = DataTableCard<PatientModel>(
+      items: patients,
+      emptyMessage: "No patients match the selected filters",
+      columns: [
+        TableColumn<PatientModel>(
+          label: "Token",
+          flex: 2,
+          cellBuilder: (p) => Text(
+            p.token,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primaryPurple,
+            ),
+          ),
+        ),
+        TableColumn<PatientModel>(
+          label: "Patient",
+          flex: 2,
+          cellBuilder: (p) => Text(
+            p.name,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        TableColumn<PatientModel>(
+          label: "Department",
+          flex: 2,
+          cellBuilder: (p) => Text(
+            p.department,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+        TableColumn<PatientModel>(
+          label: "Doctor",
+          flex: 2,
+          cellBuilder: (p) =>
+              Text(p.doctor, style: const TextStyle(fontSize: 14)),
+        ),
+        TableColumn<PatientModel>(
+          label: "Phone",
+          flex: 2,
+          cellBuilder: (p) => Text(
+            p.phoneNumber,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ),
+        TableColumn<PatientModel>(
+          label: "Status",
+          flex: 2,
+          cellBuilder: (p) => Align(
+            alignment: Alignment.centerLeft,
+            child: StatusPill(status: p.status),
+          ),
+        ),
+        TableColumn<PatientModel>(
+          label: "Actions",
+          flex: 2,
+          cellBuilder: (p) => Row(
+            children: [
+              // Edit patient
+              GestureDetector(
+                onTap: () => _openEditPatientDialog(p),
+                child: Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: Colors.grey.shade700,
+                ),
               ),
-              const SizedBox(height: 24),
-
-              // Patient records table
-              DataTableCard<PatientModel>(
-                items: patients,
-                emptyMessage: "No patients match the selected filters",
-                columns: [
-                  TableColumn<PatientModel>(
-                    label: "Token",
-                    flex: 2,
-                    cellBuilder: (p) => Text(
-                      p.token,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primaryPurple,
-                      ),
-                    ),
-                  ),
-                  TableColumn<PatientModel>(
-                    label: "Patient",
-                    flex: 2,
-                    cellBuilder: (p) => Text(
-                      p.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  TableColumn<PatientModel>(
-                    label: "Department",
-                    flex: 2,
-                    cellBuilder: (p) => Text(
-                      p.department,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                  TableColumn<PatientModel>(
-                    label: "Doctor",
-                    flex: 2,
-                    cellBuilder: (p) =>
-                        Text(p.doctor, style: const TextStyle(fontSize: 14)),
-                  ),
-                  TableColumn<PatientModel>(
-                    label: "Phone",
-                    flex: 2,
-                    cellBuilder: (p) => Text(
-                      p.phoneNumber,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
-                  TableColumn<PatientModel>(
-                    label: "Status",
-                    flex: 2,
-                    cellBuilder: (p) => Align(
-                      alignment: Alignment.centerLeft,
-                      child: StatusPill(status: p.status),
-                    ),
-                  ),
-                  TableColumn<PatientModel>(
-                    label: "Actions",
-                    flex: 2,
-                    cellBuilder: (p) => Row(
-                      children: [
-                        // Edit patient
-                        GestureDetector(
-                          onTap: () => _openEditPatientDialog(p),
-                          child: Icon(
-                            Icons.edit_outlined,
-                            size: 18,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        // Remove patient record — no confirmation dialog currently
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              AppdataStore().patient.remove(p);
-                            });
-                          },
-                          child: const Icon(
-                            Icons.delete_outline,
-                            size: 18,
-                            color: Colors.redAccent,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 14),
+              // Remove patient record — no confirmation dialog currently
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    AppdataStore().patient.remove(p);
+                  });
+                },
+                child: const Icon(
+                  Icons.delete_outline,
+                  size: 18,
+                  color: Colors.redAccent,
+                ),
               ),
-
-              const SizedBox(height: 80),
             ],
           ),
         ),
       ],
-    ),
-    // Secondary entry point for adding a patient (mirrors the "Add Patient" button above).
-    floatingActionButton: FloatingActionButton(
-      onPressed: () {
-        _openAddPatientDialog();
-      },
-      backgroundColor: AppColors.primaryPurple,
-      child: const Icon(Icons.add, color: Colors.white),
-    ),
-  );
-}
+    );
+
+    if (!isMobile) return table;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SizedBox(width: 1000, child: table), 
+    );
+  }
 
   Widget _buildDropdown({
     required String value,
     required List<String> items,
     required ValueChanged<String?> onChanged,
+    bool fillWidth = false, 
   }) {
     return Container(
       height: 48,
@@ -503,11 +614,16 @@ Widget build(BuildContext context) {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
+          isExpanded: fillWidth, 
           icon: const Icon(Icons.keyboard_arrow_down, size: 20),
           items: items
               .map((item) => DropdownMenuItem(
                     value: item,
-                    child: Text(item, style: AppTypography.normaltext),
+                    child: Text(
+                      item,
+                      style: AppTypography.normaltext,
+                      overflow: TextOverflow.ellipsis, 
+                    ),
                   ))
               .toList(),
           onChanged: onChanged,

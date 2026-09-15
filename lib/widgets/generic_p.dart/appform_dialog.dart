@@ -116,7 +116,7 @@ void _handleSubmit() {
     if (isTextType) {
       final value = (values[field.key] as String?)?.trim() ?? "";
       if (value.isEmpty) missingLabels.add(field.label);
-    } else if (field.type == FieldType.dropdown) {           // ADD THIS BLOCK
+    } else if (field.type == FieldType.dropdown) {          
       if (values[field.key] == null) missingLabels.add(field.label);
     }
   }
@@ -134,12 +134,22 @@ void _handleSubmit() {
 
   @override
   Widget build(BuildContext context) {
+    final Size screenSize = MediaQuery.of(context).size;
+    final bool isMobile = screenSize.width < 700; 
+
+   
+    final double dialogWidth = isMobile ? screenSize.width * 0.92 : 420; 
+    final double dialogMaxHeight = isMobile ? screenSize.height * 0.85 : 640; 
+
     return Dialog(
       backgroundColor: Colors.transparent,
+      insetPadding: isMobile
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 24) 
+          : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       child: Container(
-        width: 420,
-        constraints: const BoxConstraints(maxHeight: 640),
-        padding: const EdgeInsets.all(24),
+        width: dialogWidth,
+        constraints: BoxConstraints(maxHeight: dialogMaxHeight),
+        padding: EdgeInsets.all(isMobile ? 18 : 24),
         decoration: BoxDecoration(
           color: AppColors.bgColor,
           borderRadius: BorderRadius.circular(20),
@@ -152,8 +162,13 @@ void _handleSubmit() {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(widget.title,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    overflow: TextOverflow.ellipsis, 
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: Icon(Icons.close, color: Colors.grey.shade600),
@@ -165,7 +180,7 @@ void _handleSubmit() {
             // Field list, scrollable so a long form still fits on screen.
             Flexible(
               child: SingleChildScrollView(
-                child: _buildFieldsLayout(),
+                child: _buildFieldsLayout(isMobile: isMobile),
               ),
             ),
 
@@ -201,15 +216,20 @@ void _handleSubmit() {
   }
 
   // Lays fields out top-to-bottom, pairing up two consecutive halfWidth
-  // fields into a single row.
-  Widget _buildFieldsLayout() {
+  // fields into a single row on desktop. On mobile, halfWidth fields are
+  // stacked full-width instead — a ~170px-wide phone column is too narrow
+  // for two side-by-side inputs to stay usable.
+  Widget _buildFieldsLayout({required bool isMobile}) {
     final List<Widget> rows = [];
     int i = 0;
 
     while (i < widget.fields.length) {
       final field = widget.fields[i];
 
-      if (field.halfWidth && i + 1 < widget.fields.length && widget.fields[i + 1].halfWidth) {
+      if (!isMobile && 
+          field.halfWidth &&
+          i + 1 < widget.fields.length &&
+          widget.fields[i + 1].halfWidth) {
         rows.add(Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -229,7 +249,7 @@ void _handleSubmit() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows);
   }
 
-  // Dispatches to the right builder based on the field's type.
+
   Widget _buildField(FormFieldConfig field) {
     switch (field.type) {
       case FieldType.text:
@@ -302,7 +322,7 @@ Widget _buildDropdownField(FormFieldConfig field) {
   if (currentOptions.isNotEmpty && !currentOptions.contains(values[field.key])) {
     values[field.key] = currentOptions.first;
   } else if (currentOptions.isEmpty) {
-    values[field.key] = null; // ADD THIS — explicitly clear so validation catches it
+    values[field.key] = null; 
   }
 
   return Column(
@@ -315,7 +335,7 @@ Widget _buildDropdownField(FormFieldConfig field) {
         decoration: BoxDecoration(
           color: Colors.white,
           border: Border.all(
-            color: currentOptions.isEmpty ? Colors.orange.shade300 : Colors.grey.shade300, // CHANGED
+            color: currentOptions.isEmpty ? Colors.orange.shade300 : Colors.grey.shade300, 
           ),
           borderRadius: BorderRadius.circular(10),
         ),
@@ -325,7 +345,7 @@ Widget _buildDropdownField(FormFieldConfig field) {
             isExpanded: true,
             hint: currentOptions.isEmpty
                 ? Text(
-                    field.emptyOptionsMessage ?? "No options available",  // CHANGED
+                    field.emptyOptionsMessage ?? "No options available",  
                     style: TextStyle(color: Colors.orange.shade700, fontSize: 13),
                   )
                 : null,
@@ -372,11 +392,14 @@ Widget _buildDropdownField(FormFieldConfig field) {
                           color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade400,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          option,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade600,
+                        Flexible( 
+                          child: Text(
+                            option,
+                            overflow: TextOverflow.ellipsis, 
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade600,
+                            ),
                           ),
                         ),
                       ],

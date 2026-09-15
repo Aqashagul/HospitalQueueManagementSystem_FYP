@@ -3,9 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 
-// View model for a single row in the Current Queue table. Kept separate
-// from PatientModel so this widget doesn't depend directly on the store's
-// data shape.
+
 class QueueEntry {
   final String token;
   final String patientName;
@@ -23,7 +21,9 @@ class QueueEntry {
 }
 
 // Dashboard widget showing all patients who are still active in the
-// queue (i.e. not completed or cancelled), in a simple table layout.
+// queue (i.e. not completed or cancelled). Desktop/laptop: a table
+// layout. Mobile: compact stacked entry cards (a 5-column table would
+// be squeezed unreadable on a phone width).
 // Shows the 6 most recently registered by default, with a "View more"
 // toggle to reveal the rest.
 class CurrentQueue extends StatefulWidget {
@@ -59,8 +59,8 @@ class _CurrentQueueState extends State<CurrentQueue> {
         .toList();
   }
 
-  // Flex ratios shared by the header row and every data row, so columns
-  // always line up regardless of content length.
+  // Flex ratios shared by the header row and every desktop data row, so
+  // columns always line up regardless of content length.
   static const Map<String, int> _columnFlex = {
     "token": 2,
     "patient": 3,
@@ -71,102 +71,115 @@ class _CurrentQueueState extends State<CurrentQueue> {
 
   @override
   Widget build(BuildContext context) {
-    final allEntries = _allEntries;
-    final bool hasMore = allEntries.length > _previewCount;
-    final entriesToShow = _showAll ? allEntries : allEntries.take(_previewCount).toList();
+    return LayoutBuilder( // this widget decides its own mobile/desktop layout
+      builder: (context, constraints) {
+        final bool isMobile = constraints.maxWidth < 700; // NEW
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Recently Added Patients",
-            style: GoogleFonts.inter(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-            ),
+        final allEntries = _allEntries;
+        final bool hasMore = allEntries.length > _previewCount;
+        final entriesToShow = _showAll ? allEntries : allEntries.take(_previewCount).toList();
+
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
           ),
-          const SizedBox(height: 28),
-
-          _buildHeaderRow(),
-          const Divider(height: 24),
-
-          // Built with Column.generate instead of ListView.builder since
-          // this already sits inside a SingleChildScrollView on the
-          // dashboard page.
-          ...List.generate(entriesToShow.length, (index) {
-            final entry = entriesToShow[index];
-            final isLast = index == entriesToShow.length - 1;
-
-            return Column(
-              children: [
-                _buildDataRow(entry),
-                if (!isLast) const Divider(height: 24),
-              ],
-            );
-          }),
-
-          if (hasMore) ...[
-            const SizedBox(height: 16),
-            MouseRegion(
-              cursor: SystemMouseCursors.click,
-              onEnter: (_) => setState(() => _isViewMoreHovered = true),
-              onExit: (_) => setState(() => _isViewMoreHovered = false),
-              child: GestureDetector(
-                onTap: () => setState(() => _showAll = !_showAll),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: _isViewMoreHovered
-                        ? Color.lerp(AppColors.primaryPurple, Colors.black, 0.1)
-                        : AppColors.primaryPurple,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: _isViewMoreHovered
-                        ? [
-                            BoxShadow(
-                              color: AppColors.primaryPurple.withValues(alpha: .35),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ]
-                        : [],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _showAll ? "View less" : "View more",
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        _showAll ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                        size: 18,
-                        color: Colors.white,
-                      ),
-                    ],
-                  ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Recently Added Patients",
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-          ],
-        ],
-      ),
+              const SizedBox(height: 28),
+
+              if (!isMobile) ...[
+                _buildHeaderRow(),
+                const Divider(height: 24),
+              ],
+
+              // Built with Column.generate instead of ListView.builder since
+              // this already sits inside a SingleChildScrollView on the
+              // dashboard page.
+              ...List.generate(entriesToShow.length, (index) {
+                final entry = entriesToShow[index];
+                final isLast = index == entriesToShow.length - 1;
+
+                if (isMobile) {
+                  return _buildMobileEntryCard(entry, isLast); // NEW
+                }
+
+                return Column(
+                  children: [
+                    _buildDataRow(entry),
+                    if (!isLast) const Divider(height: 24),
+                  ],
+                );
+              }),
+
+              if (hasMore) ...[
+                const SizedBox(height: 16),
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  onEnter: (_) => setState(() => _isViewMoreHovered = true),
+                  onExit: (_) => setState(() => _isViewMoreHovered = false),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _showAll = !_showAll),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: _isViewMoreHovered
+                            ? Color.lerp(AppColors.primaryPurple, Colors.black, 0.1)
+                            : AppColors.primaryPurple,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: _isViewMoreHovered
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.primaryPurple.withValues(alpha: .35),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ]
+                            : [],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _showAll ? "View less" : "View more",
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            _showAll ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
   // Column header labels, aligned to the same flex ratios as the data rows.
+  // Desktop/laptop only — mobile entries carry their own inline labels.
   Widget _buildHeaderRow() {
     TextStyle headerStyle = TextStyle(
       fontSize: 13,
@@ -186,6 +199,7 @@ class _CurrentQueueState extends State<CurrentQueue> {
   }
 
   // Renders one queue entry as a row matching the header's column layout.
+  // Desktop/laptop only.
   Widget _buildDataRow(QueueEntry entry) {
     TextStyle cellStyle = const TextStyle(fontSize: 14, color: Colors.black87);
 
@@ -218,6 +232,52 @@ class _CurrentQueueState extends State<CurrentQueue> {
           child: _StatusPill(status: entry.status),
         ),
       ],
+    );
+  }
+
+  // Mobile: one queue entry as a compact card instead of a table row —
+  // token + status pill on top, patient name below, doctor/department
+  // as a small subtitle line. No columns to squeeze.
+  Widget _buildMobileEntryCard(QueueEntry entry, bool isLast) {
+    return Container(
+      margin: EdgeInsets.only(bottom: isLast ? 0 : 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "TOKEN ${entry.token}",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryPurple,
+                ),
+              ),
+              _StatusPill(status: entry.status),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            entry.patientName,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            "${entry.doctorName} • ${entry.department}",
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
     );
   }
 }

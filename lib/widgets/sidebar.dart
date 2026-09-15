@@ -10,11 +10,14 @@ import 'package:queue_management_system/widgets/top_appbar.dart';
 class Sidebar extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onItemSelected;
+   final bool forceExpanded;
 
   const Sidebar({
     super.key,
     required this.selectedIndex,
     required this.onItemSelected,
+    this.forceExpanded = false,
+    
   });
 
   @override
@@ -59,9 +62,11 @@ class _SidebarState extends State<Sidebar> {
 
   @override
   Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isNarrowScreen = screenWidth < _autoCollapseBreakpoint;
-    final bool effectiveCollapsed = isNarrowScreen ? true : isCollapsed;
+   final double screenWidth = MediaQuery.of(context).size.width;
+final bool isNarrowScreen =
+    !widget.forceExpanded && screenWidth < _autoCollapseBreakpoint; 
+final bool effectiveCollapsed =
+    widget.forceExpanded ? false : (isNarrowScreen ? true : isCollapsed); 
 
     void toggleSidebar() {
       if (!isNarrowScreen) {
@@ -85,7 +90,7 @@ class _SidebarState extends State<Sidebar> {
                 TopAppbar(
                   isCollapsed: effectiveCollapsed,
                   forceShowToggleIcon: effectiveCollapsed && _isRailHovered,
-                  onToggle: isNarrowScreen ? () {} : toggleSidebar,
+                  onToggle: (isNarrowScreen || widget.forceExpanded) ? () {} : toggleSidebar,
                 ),
 
                 const Divider(
@@ -150,7 +155,7 @@ class _SidebarState extends State<Sidebar> {
           ),
 
          
-          if (!effectiveCollapsed && !isNarrowScreen)
+      if (!effectiveCollapsed && !isNarrowScreen && !widget.forceExpanded)
             Positioned(
               right: 7,
               top: 20,

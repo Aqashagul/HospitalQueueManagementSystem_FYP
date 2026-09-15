@@ -7,7 +7,6 @@ import 'package:queue_management_system/models/doctor_queue_model.dart';
 import 'package:queue_management_system/widgets/doctor_image.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/shared_widgets.dart';
 
-
 class DoctorQueueDetailPage extends StatefulWidget {
   final String doctorName;
   final String department;
@@ -28,6 +27,9 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   // True once the user has explicitly tapped a patient in the list,
   // overriding the default auto-selected patient.
   bool _hasManualSelection = false;
+
+ 
+  int _mobilePanelIndex = 0; 
 
   // Per-button loading flags, shown as spinners while an action is in flight.
   bool _isCompleting = false;
@@ -123,9 +125,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
-  // The patient shown in the middle detail panel.
-  // Priority: manual selection from the list > current in-consultation
-  // patient (on the Waiting tab) > first item in the active list.
+  
   QueuePatient? get _selectedPatient {
     if (_hasManualSelection &&
         _activeList.isNotEmpty &&
@@ -155,30 +155,44 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                   child: const Icon(Icons.arrow_back, size: 22),
                 ),
                 const SizedBox(width: 16),
-                Text(
-                  widget.doctorName,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    widget.doctorName,
+                    overflow: TextOverflow.ellipsis, 
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
 
-          // Three-column layout: doctor panel | patient details | queue list
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(width: 260, child: _buildDoctorPanel()),
-                Container(width: 1, color: Colors.grey.shade300),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isMobile = constraints.maxWidth < 700; 
 
-                Expanded(child: _buildPatientDetailsPanel()),
-                Container(width: 1, color: Colors.grey.shade300),
+                if (isMobile) return _buildMobileLayout(); 
 
-                SizedBox(width: 340, child: _buildQueueListPanel()),
-              ],
+                // Original three-column layout: doctor panel | patient details | queue list
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(width: 260, child: _buildDoctorPanel()),
+                    Container(width: 1, color: Colors.grey.shade300),
+
+                    Expanded(child: _buildPatientDetailsPanel(isMobile: false)),
+                    Container(width: 1, color: Colors.grey.shade300),
+
+                    SizedBox(
+                      width: 340,
+                      child: _buildQueueListPanel(isMobile: false),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -186,7 +200,116 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
-  // LEFT PANEL: doctor photo, name, department, and waiting-queue count.
+ 
+  Widget _buildMobileLayout() {
+    return Column(
+      children: [
+        _buildMobileDoctorStrip(),
+        const Divider(height: 1),
+        const SizedBox(height: 10),
+        _buildMobileToggle(),
+        Expanded(
+          child: _mobilePanelIndex == 0
+              ? _buildQueueListPanel(isMobile: true)
+              : _buildPatientDetailsPanel(isMobile: true),
+        ),
+      ],
+    );
+  }
+
+  
+  Widget _buildMobileDoctorStrip() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          if (doctor != null) DoctorAvatar(doctor: doctor!),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.doctorName,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  widget.department.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade500,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primaryPurple,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              "Queue ${waitingPatients.length}",
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Two-button toggle used only on mobile to switch which single panel
+  // (Queue list vs Patient details) currently occupies the screen.
+  Widget _buildMobileToggle() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Row(
+        children: [
+          Expanded(child: _buildMobileToggleButton(label: "Queue", index: 0)),
+          const SizedBox(width: 10),
+          Expanded(child: _buildMobileToggleButton(label: "Details", index: 1)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileToggleButton({required String label, required int index}) {
+    final bool isSelected = _mobilePanelIndex == index;
+    return GestureDetector(
+      onTap: () => setState(() => _mobilePanelIndex = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primaryPurple : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : Colors.grey.shade600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // LEFT PANEL (desktop only): doctor photo, name, department, and
+  // waiting-queue count.
   Widget _buildDoctorPanel() {
     if (doctor == null) {
       return const Center(child: Text("Doctor not found"));
@@ -291,8 +414,10 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
-  // RIGHT PANEL: Waiting/Completed tabs plus the scrollable patient list.
-  Widget _buildQueueListPanel() {
+  // Waiting/Completed tabs plus the scrollable patient list.
+  // Desktop: sits in the fixed 340px right column. Mobile: fills the
+  // whole screen when the "Queue" toggle is active.
+  Widget _buildQueueListPanel({required bool isMobile}) {
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -328,6 +453,9 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                         onTap: () => setState(() {
                           selectedPatientIndex = index;
                           _hasManualSelection = true;
+                          // On mobile, jump straight to the Details panel
+                          // once a patient is picked from the list.
+                          if (isMobile) _mobilePanelIndex = 1; // NEW
                         }),
                         child: Container(
                           margin: const EdgeInsets.only(bottom: 10),
@@ -395,8 +523,10 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
-  // MIDDLE PANEL: selected patient's full details plus action buttons.
-  Widget _buildPatientDetailsPanel() {
+  // Selected patient's full details plus action buttons.
+  // Desktop: fields laid out in 3-wide rows (original). Mobile: fields
+  // stacked one per line so nothing gets squeezed into an unreadable width.
+  Widget _buildPatientDetailsPanel({required bool isMobile}) {
     final patient = _selectedPatient;
 
     if (patient == null) {
@@ -416,8 +546,92 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       widget.doctorName,
     );
 
+    final fieldsSection = isMobile
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildReadOnlyField("TOKEN #", patient.token),
+              const SizedBox(height: 14),
+              _buildDropdownField("STATUS", patient.status),
+              const SizedBox(height: 14),
+              _buildReadOnlyField("FULL NAME", patient.patientName, bold: true),
+              const SizedBox(height: 14),
+              _buildReadOnlyField("PHONE NUMBER", patient.phoneNumber),
+              const SizedBox(height: 14),
+              _buildReadOnlyField(
+                "REGISTRATION TIME",
+                _formatTime(patient.registrationTime),
+              ),
+              const SizedBox(height: 14),
+              _buildReadOnlyField("DOCTOR", widget.doctorName),
+              const SizedBox(height: 14),
+              _buildReadOnlyField("DEPARTMENT", widget.department),
+            ],
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildReadOnlyField("TOKEN #", patient.token),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: _buildDropdownField("STATUS", patient.status),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: _buildReadOnlyField(
+                      "FULL NAME",
+                      patient.patientName,
+                      bold: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildReadOnlyField(
+                      "PHONE NUMBER",
+                      patient.phoneNumber,
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: _buildReadOnlyField(
+                      "REGISTRATION TIME",
+                      _formatTime(patient.registrationTime),
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: _buildReadOnlyField("DOCTOR", widget.doctorName),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildReadOnlyField("DEPARTMENT", widget.department),
+                  ),
+                  const SizedBox(width: 20),
+                  const Expanded(child: SizedBox()),
+                  const SizedBox(width: 20),
+                  const Expanded(child: SizedBox()),
+                ],
+              ),
+            ],
+          );
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
+      padding: EdgeInsets.all(isMobile ? 16 : 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -433,55 +647,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
           ),
           const SizedBox(height: 28),
 
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _buildReadOnlyField("TOKEN #", patient.token)),
-              const SizedBox(width: 20),
-              Expanded(child: _buildDropdownField("STATUS", patient.status)),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _buildReadOnlyField(
-                  "FULL NAME",
-                  patient.patientName,
-                  bold: true,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _buildReadOnlyField("PHONE NUMBER", patient.phoneNumber),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _buildReadOnlyField(
-                  "REGISTRATION TIME",
-                  _formatTime(patient.registrationTime),
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(child: _buildReadOnlyField("DOCTOR", widget.doctorName)),
-            ],
-          ),
-          const SizedBox(height: 18),
-
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _buildReadOnlyField("DEPARTMENT", widget.department),
-              ),
-              const SizedBox(width: 20),
-              const Expanded(child: SizedBox()),
-              const SizedBox(width: 20),
-              const Expanded(child: SizedBox()),
-            ],
-          ),
+          fieldsSection,
           const SizedBox(height: 24),
 
           Text(
@@ -505,7 +671,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
 
           // Complete / Call Patient / Skip / Cancel — each enabled only
           // when it's a valid action given the doctor's and patient's
-          // current state.
+          // current state. Wrap already makes these safe on narrow widths.
           Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -583,9 +749,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
-  // Status dropdown field. Currently display-only — selecting a new
-  // value doesn't update anything yet; needs a controller method to
-  // actually change patient status from here.
+ 
   Widget _buildDropdownField(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,11 +877,12 @@ class _ActionButtonState extends State<_ActionButton> {
     final Color effectiveBg = !widget.enabled
         ? Colors.grey.shade200
         : isHovered && interactive
-            ? Color.lerp(widget.bgColor, Colors.black, 0.1)!
-            : widget.bgColor;
+        ? Color.lerp(widget.bgColor, Colors.black, 0.1)!
+        : widget.bgColor;
 
-    final Color effectiveText =
-        !widget.enabled ? Colors.grey.shade400 : widget.textColor;
+    final Color effectiveText = !widget.enabled
+        ? Colors.grey.shade400
+        : widget.textColor;
 
     return MouseRegion(
       cursor: interactive ? SystemMouseCursors.click : SystemMouseCursors.basic,
