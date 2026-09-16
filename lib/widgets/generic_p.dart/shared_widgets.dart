@@ -13,6 +13,7 @@ class StatCard extends StatelessWidget {
   final double iconContainerPadding;
   final double iconSize;
   final double valueFontSize;
+  final double? labelFontSize;   
 
   const StatCard({
     super.key,
@@ -25,6 +26,7 @@ class StatCard extends StatelessWidget {
     this.iconContainerPadding = 12,
     this.iconSize = 22,
     this.valueFontSize = 22,
+    this.labelFontSize,
   });
 
   @override
@@ -47,7 +49,13 @@ class StatCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: AppTypography.upperCaseText, overflow: TextOverflow.ellipsis),
+             Text(
+  label,
+  style: labelFontSize != null
+      ? AppTypography.upperCaseText.copyWith(fontSize: labelFontSize)
+      : AppTypography.upperCaseText,
+  overflow: TextOverflow.ellipsis,
+),
                 const SizedBox(height: 4),
                 Text(value, style: TextStyle(fontSize: valueFontSize, fontWeight: FontWeight.bold)),
               ],

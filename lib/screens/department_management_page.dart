@@ -231,6 +231,11 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
                     ] else
                       const SizedBox(height: 15),
 
+ // Search bar, status filter, sort dropdown, and add-department button
+                    _buildToolbar(isMobile: isMobile),
+                    const SizedBox(height: 24),
+
+
                     // Summary stat cards: total, assigned doctors, active, inactive
                     _buildStatCardsSection(
                       isMobile: isMobile,
@@ -241,9 +246,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Search bar, status filter, sort dropdown, and add-department button
-                    _buildToolbar(isMobile: isMobile),
-                    const SizedBox(height: 24),
+                   
 
                     // Department records table
                     _buildTable(departments, isMobile: isMobile),
@@ -273,10 +276,12 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
     required int activeCount,
     required int inactiveCount,
   }) {
-    final cardPadding = isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18);
-    final cardIconPadding = isMobile ? 8.0 : 12.0;
-    final cardIconSize = isMobile ? 18.0 : 22.0;
-    final cardValueFontSize = isMobile ? 18.0 : 22.0;
+   
+ final cardPadding = isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18);
+final cardIconPadding = isMobile ? 8.0 : 12.0;
+final cardIconSize = isMobile ? 18.0 : 22.0;
+final cardValueFontSize = isMobile ? 18.0 : 22.0;
+//final cardLabelFontSize = isMobile ? 10.0 : null;
 
     final card1 = StatCard(
       icon: Icons.apartment_outlined,
@@ -288,6 +293,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
       iconContainerPadding: cardIconPadding,
       iconSize: cardIconSize,
       valueFontSize: cardValueFontSize,
+     // labelFontSize: cardLabelFontSize,
     );
     final card2 = StatCard(
       icon: Icons.medical_services_outlined,
@@ -299,6 +305,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
       iconContainerPadding: cardIconPadding,
       iconSize: cardIconSize,
       valueFontSize: cardValueFontSize,
+     // labelFontSize: cardLabelFontSize,
     );
     final card3 = StatCard(
       icon: Icons.check_circle_outline,
@@ -310,6 +317,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
       iconContainerPadding: cardIconPadding,
       iconSize: cardIconSize,
       valueFontSize: cardValueFontSize,
+     // labelFontSize: cardLabelFontSize,
     );
     final card4 = StatCard(
       icon: Icons.error_outline,
@@ -321,29 +329,32 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
       iconContainerPadding: cardIconPadding,
       iconSize: cardIconSize,
       valueFontSize: cardValueFontSize,
+      //labelFontSize: cardLabelFontSize,
     );
 
-    if (isMobile) {
-      return Column(
+
+if (isMobile) {
+  return Column(
+    children: [
+      Row(
         children: [
-          Row(
-            children: [
-              Expanded(child: card1),
-              const SizedBox(width: 8),
-              Expanded(child: card2),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: card3),
-              const SizedBox(width: 8),
-              Expanded(child: card4),
-            ],
-          ),
+          Expanded(child: card1),
+          const SizedBox(width: 8),
+          Expanded(child: card2),
         ],
-      );
-    }
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(child: card3),
+          const SizedBox(width: 8),
+          Expanded(child: card4),
+        ],
+      ),
+    ],
+  );
+}
+
 
     return Row(
       children: [

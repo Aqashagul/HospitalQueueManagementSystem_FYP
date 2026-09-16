@@ -299,6 +299,10 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                     ] else
                       const SizedBox(height: 15),
 
+ // Search bar, department/availability filters, and add-doctor button
+                    _buildToolbar(isMobile: isMobile),
+                    const SizedBox(height: 24),
+                    
                     // Summary stat cards: total, available, unavailable, free
                     _buildStatCardsSection(
                       isMobile: isMobile,
@@ -309,9 +313,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Search bar, department/availability filters, and add-doctor button
-                    _buildToolbar(isMobile: isMobile),
-                    const SizedBox(height: 24),
+                   
 
                     // Doctor records table
                     _buildTable(filteredDoctors, isMobile: isMobile),

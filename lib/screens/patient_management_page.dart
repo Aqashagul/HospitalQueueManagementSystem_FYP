@@ -281,6 +281,11 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
                     ] else
                       const SizedBox(height: 15),
 
+
+                       // Search bar, department/status filters, and add-patient button
+                    _buildToolbar(isMobile: isMobile, departmentOptions: departmentOptions),
+                    const SizedBox(height: 24),
+
                     // Summary stat cards: total, waiting, in consultation, completed
                     // — always computed from the full unfiltered list.
                     _buildStatCardsSection(
@@ -292,9 +297,7 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Search bar, department/status filters, and add-patient button
-                    _buildToolbar(isMobile: isMobile, departmentOptions: departmentOptions),
-                    const SizedBox(height: 24),
+                   
 
                     // Patient records table
                     _buildTable(patients, isMobile: isMobile),
