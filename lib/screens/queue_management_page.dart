@@ -1,18 +1,18 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:queue_management_system/call_patient.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/core/app_typography.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
-import 'package:queue_management_system/data/queue_controller.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
 import 'package:queue_management_system/models/queue_model.dart';
 import 'package:queue_management_system/screens/doctor_queue_page.dart';
+import 'package:queue_management_system/screens/queue_admin_service.dart';
 import 'package:queue_management_system/widgets/doctor_image.dart';
-import 'package:queue_management_system/widgets/generic_p.dart/search_controller.dart';
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
 import 'package:queue_management_system/widgets/resuable/rounded_card.dart';
-
 
 class QueueManagementPage extends StatefulWidget {
   const QueueManagementPage({super.key});
@@ -23,53 +23,229 @@ class QueueManagementPage extends StatefulWidget {
 
 class _QueueManagementPageState extends State<QueueManagementPage> {
   String selectedDepartmentFilter = "All Departments";
-  String selectedStatusFilter = "All Statuses";
+  String _searchQuery = "";
 
-  // Owns queue state and exposes the actions that mutate it
-  // (call next, complete patient, etc.).
-  final QueueController _controller = QueueController();
+  // Reads today's queue from Firestore and performs the admin actions.
+  final QueueAdminService _service = QueueAdminService();
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
 
-  // Always reads the current queue snapshot from the controller.
-  List<DoctorQueueStatus> get queues => _controller.getQueues();
-
-  // Handles name-based search across the queue list.
-  late final GenericSearchController<DoctorQueueStatus> queueSearch;
+  // Doctor whose action (Call Next / Complete) is currently running.
+  String? _busyDoctorName;
 
   @override
   void initState() {
     super.initState();
-    queueSearch = GenericSearchController<DoctorQueueStatus>(
-      items: queues,
-      filterLogic: (q, query) => q.name.toLowerCase().contains(query),
-    );
-    // Rebuild whenever the search query or its results change.
-    queueSearch.addListener(() => setState(() {}));
+    _stream = _service.watchTodaysEntries();
+    // Doctors/departments come from the store; refresh when they change.
+    AppdataStore().addListener(_onStoreChanged);
+  }
+
+  void _onStoreChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   @override
   void dispose() {
-    queueSearch.dispose();
+    AppdataStore().removeListener(_onStoreChanged);
     super.dispose();
   }
 
-  // Search results narrowed further by the selected department filter.
-  List<DoctorQueueStatus> get _visibleQueues {
-    return queueSearch.filteredItems.where((q) {
-      return selectedDepartmentFilter == "All Departments" ||
-          q.department == selectedDepartmentFilter;
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+      );
+  }
+
+  // Firestore doctor id for a doctor name (queue entries store doctorId).
+  String? _doctorIdFor(String name) {
+    for (final d in AppdataStore().doctors) {
+      if (d.name == name) return d.id;
+    }
+    return null;
+  }
+
+  // Runs one admin action for a doctor. Blocks double clicks and shows a
+  // snackbar if something fails (network, permission, queue changed...).
+  // Returns true when the action succeeded, false otherwise.
+  Future<bool> _runAction(
+    String doctorName,
+    Future<void> Function(String doctorId) action,
+  ) async {
+    if (_busyDoctorName != null) return false;
+
+    final id = _doctorIdFor(doctorName);
+    if (id == null) {
+      _showSnack("Doctor not found.");
+      return false;
+    }
+
+    setState(() => _busyDoctorName = doctorName);
+    try {
+      await action(id);
+      return true;
+    } catch (e) {
+      _showSnack(QueueAdminService.friendlyError(e));
+      return false;
+    } finally {
+      if (mounted) setState(() => _busyDoctorName = null);
+    }
+  }
+
+  // The doctor's patient who is "In Consultation" right now (fresh read of
+  // today's queue), or null when nobody is.
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _currentEntryOf(
+    String doctorId,
+  ) async {
+    final snap = await _service.watchTodaysEntries().first;
+    final current =
+        snap.docs.where((d) {
+          return d.data()['doctorId'] == doctorId &&
+              QueueAdminService.normalizeStatus(
+                    d.data()['status']?.toString(),
+                  ) ==
+                  'In Consultation';
+        }).toList()..sort(
+          (a, b) =>
+              QueueAdminService.seqOf(a).compareTo(QueueAdminService.seqOf(b)),
+        );
+    return current.isEmpty ? null : current.first;
+  }
+
+  // Marks the current patient as done, then tells that patient their visit
+  // is complete.
+  Future<void> _handleComplete(String doctorName) async {
+    // Find who is being served BEFORE completing, because after completing
+    // nobody is "In Consultation" any more.
+    final doctorId = _doctorIdFor(doctorName);
+    String? entryId;
+    if (doctorId != null) {
+      try {
+        entryId = (await _currentEntryOf(doctorId))?.id;
+      } catch (_) {}
+    }
+
+    final ok = await _runAction(doctorName, _service.completeCurrent);
+    if (ok && entryId != null) {
+      final note = await notifyPatient(entryId, 'completed');
+      if (note != null) _showSnack(note);
+    }
+  }
+
+  // Calls the next waiting patient in, then sends them a push notification.
+  Future<void> _handleCallNext(String doctorName) async {
+    final ok = await _runAction(doctorName, _service.callNext);
+    if (ok) await _notifyCurrentPatient(doctorName);
+  }
+
+  // After Call Next, notifies the patient who is now "In Consultation".
+  Future<void> _notifyCurrentPatient(String doctorName) async {
+    final doctorId = _doctorIdFor(doctorName);
+    if (doctorId == null) return;
+
+    try {
+      final current = await _currentEntryOf(doctorId);
+      if (current == null) return;
+
+      final note = await notifyCalledPatient(current.id);
+      if (note != null) _showSnack(note);
+    } catch (_) {
+      // Notification fail ho to Call Next phir bhi ho chuka hota hai
+    }
+  }
+
+  // One DoctorQueueStatus per doctor, built from today's queue entries.
+  // Doctors with no patients still appear (with zero counts).
+  //
+  // The list is ordered so the busiest doctors are on top:
+  //  1. Doctors with patients waiting / in consultation, the one whose
+  //     newest patient arrived most recently first.
+  //  2. Doctors who saw patients today but have nobody active now.
+  //  3. Doctors with no patients today, at the bottom (A to Z).
+  List<DoctorQueueStatus> _buildQueues(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final ranked = AppdataStore().doctors.map((doc) {
+      final mine = docs.where((d) => d.data()['doctorId'] == doc.id).toList();
+
+      String statusOf(QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+          QueueAdminService.normalizeStatus(d.data()['status']?.toString());
+
+      final inConsultation =
+          mine.where((d) => statusOf(d) == 'In Consultation').toList()..sort(
+            (a, b) => QueueAdminService.seqOf(
+              a,
+            ).compareTo(QueueAdminService.seqOf(b)),
+          );
+
+      final waitingCount = mine.where((d) => statusOf(d) == 'Waiting').length;
+      final completedCount = mine
+          .where((d) => statusOf(d) == 'Completed')
+          .length;
+
+      // When this doctor's newest patient arrived. joinedAt is null for a
+      // moment right after a patient joins, so treat that as "now".
+      DateTime? lastJoined;
+      for (final d in mine) {
+        final t = d.data()['joinedAt'];
+        final when = t is Timestamp ? t.toDate() : DateTime.now();
+        if (lastJoined == null || when.isAfter(lastJoined)) {
+          lastJoined = when;
+        }
+      }
+
+      final queue = DoctorQueueStatus(
+        name: doc.name,
+        department: doc.department,
+        specialization: doc.specialization,
+        currentToken: inConsultation.isEmpty
+            ? null
+            : inConsultation.first.data()['token']?.toString(),
+        waitingCount: waitingCount,
+        completedToday: completedCount,
+      );
+
+      return _RankedQueue(
+        queue: queue,
+        lastJoined: lastJoined,
+        hasActive: waitingCount > 0 || inConsultation.isNotEmpty,
+      );
     }).toList();
+
+    // 0 = has active patients, 1 = had patients today, 2 = no patients today.
+    int tier(_RankedQueue r) =>
+        r.hasActive ? 0 : (r.lastJoined != null ? 1 : 2);
+
+    ranked.sort((a, b) {
+      final byTier = tier(a).compareTo(tier(b));
+      if (byTier != 0) return byTier;
+
+      // Same tier: newest patient first.
+      if (a.lastJoined != null && b.lastJoined != null) {
+        final byTime = b.lastJoined!.compareTo(a.lastJoined!);
+        if (byTime != 0) return byTime;
+      }
+
+      // Still tied (or both empty): A to Z, so the order never jumps around.
+      return a.queue.name.toLowerCase().compareTo(b.queue.name.toLowerCase());
+    });
+
+    return ranked.map((r) => r.queue).toList();
   }
 
-  void _handleComplete(String doctorName) {
-    setState(() {
-      _controller.completePatient(doctorName);
-    });
-  }
-
-  void _handleCallNext(String doctorName) {
-    setState(() {
-      _controller.callNextPatient(doctorName);
-    });
+  // Applies the search text and the department filter.
+  List<DoctorQueueStatus> _applyFilters(List<DoctorQueueStatus> queues) {
+    final q = _searchQuery.trim().toLowerCase();
+    return queues.where((queue) {
+      final matchesSearch = q.isEmpty || queue.name.toLowerCase().contains(q);
+      final matchesDept =
+          selectedDepartmentFilter == "All Departments" ||
+          queue.department == selectedDepartmentFilter;
+      return matchesSearch && matchesDept;
+    }).toList();
   }
 
   @override
@@ -78,11 +254,6 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
       "All Departments",
       ...AppdataStore().departments.map((d) => d.name),
     ];
-
-    // Keep the search controller's source list in sync with the latest
-    // queue data on every rebuild, since _controller.getQueues() can
-    // change between builds (e.g. after complete/call-next actions).
-    queueSearch.updateItems(queues);
 
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
@@ -93,12 +264,11 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
             padding: const EdgeInsets.all(24),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final bool isMobile = constraints.maxWidth < 700; 
+                final bool isMobile = constraints.maxWidth < 700;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-           
                     if (!isMobile) ...[
                       Row(
                         children: [
@@ -123,33 +293,70 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Doctor queue cards, or an empty-state message if none match
-                    if (_visibleQueues.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: Center(
-                          child: Text(
-                            "No doctors match the selected filters",
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-                          ),
-                        ),
-                      )
-                    else
-                      ...List.generate(_visibleQueues.length, (index) {
-                        final queue = _visibleQueues[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _DoctorQueueCard(
-                            queue: queue,
-                            isMobile: isMobile,
-                            onComplete: () => _handleComplete(queue.name),
-                            onCallNext: () => _handleCallNext(queue.name),
-                            // Refresh state after returning from the detail page,
-                            // in case the queue changed there.
-                            onReturn: () => setState(() {}),
-                          ),
+                    // Doctor queue cards, live from Firestore
+                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _stream,
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 40),
+                            child: Center(
+                              child: Text(
+                                QueueAdminService.friendlyError(
+                                  snapshot.error!,
+                                ),
+                                style: TextStyle(
+                                  color: Colors.red.shade700,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        if (!snapshot.hasData) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 40),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
+                        final visible = _applyFilters(
+                          _buildQueues(snapshot.data!.docs),
                         );
-                      }),
+
+                        if (visible.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 40),
+                            child: Center(
+                              child: Text(
+                                "No doctors match the selected filters",
+                                style: TextStyle(
+                                  color: Colors.grey.shade500,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        return Column(
+                          children: visible.map((queue) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _DoctorQueueCard(
+                                queue: queue,
+                                isMobile: isMobile,
+                                isBusy: _busyDoctorName != null,
+                                onComplete: () => _handleComplete(queue.name),
+                                onCallNext: () => _handleCallNext(queue.name),
+                                // Everything is live now, nothing to refresh.
+                                onReturn: () {},
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
                   ],
                 );
               },
@@ -160,18 +367,16 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
     );
   }
 
-
   Widget _buildToolbar({
     required bool isMobile,
     required List<String> departmentOptions,
   }) {
     final searchBar = DashboardSearchBar(
       hintText: "Search doctor...",
-      onChanged: (query) => queueSearch.search(query),
+      onChanged: (query) => setState(() => _searchQuery = query),
     );
 
     if (isMobile) {
-     
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -180,14 +385,14 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
           _buildDropdown(
             value: selectedDepartmentFilter,
             items: departmentOptions,
-            onChanged: (value) => setState(() => selectedDepartmentFilter = value!),
+            onChanged: (value) =>
+                setState(() => selectedDepartmentFilter = value!),
             fillWidth: true,
           ),
         ],
       );
     }
 
-   
     return Row(
       children: [
         Expanded(child: searchBar),
@@ -195,7 +400,8 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
         _buildDropdown(
           value: selectedDepartmentFilter,
           items: departmentOptions,
-          onChanged: (value) => setState(() => selectedDepartmentFilter = value!),
+          onChanged: (value) =>
+              setState(() => selectedDepartmentFilter = value!),
         ),
         const SizedBox(width: 12),
       ],
@@ -208,6 +414,9 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
     required ValueChanged<String?> onChanged,
     bool fillWidth = false,
   }) {
+    // If the selected department was deleted meanwhile, fall back safely.
+    final safeValue = items.contains(value) ? value : items.first;
+
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -221,18 +430,20 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: value,
+          value: safeValue,
           isExpanded: fillWidth,
           icon: const Icon(Icons.keyboard_arrow_down, size: 20),
           items: items
-              .map((item) => DropdownMenuItem(
-                    value: item,
-                    child: Text(
-                      item,
-                      style: AppTypography.normaltext,
-                      overflow: TextOverflow.ellipsis, 
-                    ),
-                  ))
+              .map(
+                (item) => DropdownMenuItem(
+                  value: item,
+                  child: Text(
+                    item,
+                    style: AppTypography.normaltext,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
               .toList(),
           onChanged: onChanged,
         ),
@@ -241,12 +452,26 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
   }
 }
 
+// A doctor's queue status plus what is needed to rank it in the list.
+class _RankedQueue {
+  final DoctorQueueStatus queue;
+  final DateTime? lastJoined; // when the doctor's newest patient arrived today
+  final bool hasActive; // has patients waiting or in consultation
+
+  const _RankedQueue({
+    required this.queue,
+    required this.lastJoined,
+    required this.hasActive,
+  });
+}
+
 // A single doctor's queue row: identity, live stats (current/waiting/
 // completed), and action buttons. Tapping the card opens the doctor's
 // full queue detail page.
 class _DoctorQueueCard extends StatefulWidget {
   final DoctorQueueStatus queue;
-  final bool isMobile; // NEW
+  final bool isMobile;
+  final bool isBusy; // an action is running; buttons are disabled
   final VoidCallback onComplete;
   final VoidCallback onCallNext;
   final VoidCallback onReturn;
@@ -254,6 +479,7 @@ class _DoctorQueueCard extends StatefulWidget {
   const _DoctorQueueCard({
     required this.queue,
     required this.isMobile,
+    required this.isBusy,
     required this.onComplete,
     required this.onCallNext,
     required this.onReturn,
@@ -268,7 +494,9 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
   // Returns null if no matching doctor is found in the store.
   DoctorModel? get doctor {
     try {
-      return AppdataStore().doctors.firstWhere((d) => d.name == widget.queue.name);
+      return AppdataStore().doctors.firstWhere(
+        (d) => d.name == widget.queue.name,
+      );
     } catch (_) {
       return null;
     }
@@ -291,20 +519,20 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
             ),
           ),
         );
-        // Notify the parent list so it can refresh after the detail page closes.
+        // Notify the parent list after the detail page closes.
         widget.onReturn();
       },
-      // Reusing the shared RoundedCard here instead of a hand-rolled Container
-      // keeps this card's styling consistent with the rest of the app.
       child: RoundedCard(
         color: Colors.white,
         padding: const EdgeInsets.all(20),
-        child: widget.isMobile ? _buildMobileLayout(hasCurrentPatient, isActive) : _buildDesktopLayout(hasCurrentPatient, isActive),
+        child: widget.isMobile
+            ? _buildMobileLayout(hasCurrentPatient, isActive)
+            : _buildDesktopLayout(hasCurrentPatient, isActive),
       ),
     );
   }
 
-  // Original layout — unchanged, used on laptop/web/tablet.
+  // Original layout — used on laptop/web/tablet.
   Widget _buildDesktopLayout(bool hasCurrentPatient, bool isActive) {
     return Row(
       children: [
@@ -318,7 +546,10 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
             children: [
               Text(
                 widget.queue.name,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 2),
               Text(
@@ -342,7 +573,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
         // is currently being served.
         _buildOutlinedButton(
           label: "Complete",
-          enabled: hasCurrentPatient,
+          enabled: hasCurrentPatient && !widget.isBusy,
           onTap: widget.onComplete,
         ),
         const SizedBox(width: 10),
@@ -351,7 +582,11 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
         // is active, free (no current patient), and someone is waiting.
         _buildFilledButton(
           label: "Call Next",
-          enabled: isActive && !hasCurrentPatient && widget.queue.waitingCount > 0,
+          enabled:
+              isActive &&
+              !hasCurrentPatient &&
+              widget.queue.waitingCount > 0 &&
+              !widget.isBusy,
           onTap: widget.onCallNext,
         ),
         const SizedBox(width: 8),
@@ -378,7 +613,10 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
                   Text(
                     widget.queue.name,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -395,9 +633,21 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
         const SizedBox(height: 16),
         Row(
           children: [
-            Expanded(child: _buildStatBlock("CURRENT", widget.queue.currentToken ?? "--")),
-            Expanded(child: _buildStatBlock("WAITING", "${widget.queue.waitingCount}")),
-            Expanded(child: _buildStatBlock("COMPLETED\nTODAY", "${widget.queue.completedToday}")),
+            Expanded(
+              child: _buildStatBlock(
+                "CURRENT",
+                widget.queue.currentToken ?? "--",
+              ),
+            ),
+            Expanded(
+              child: _buildStatBlock("WAITING", "${widget.queue.waitingCount}"),
+            ),
+            Expanded(
+              child: _buildStatBlock(
+                "COMPLETED\nTODAY",
+                "${widget.queue.completedToday}",
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -406,18 +656,22 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
             Expanded(
               child: _buildOutlinedButton(
                 label: "Complete",
-                enabled: hasCurrentPatient,
+                enabled: hasCurrentPatient && !widget.isBusy,
                 onTap: widget.onComplete,
-                fullWidth: true, // NEW
+                fullWidth: true,
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: _buildFilledButton(
                 label: "Call Next",
-                enabled: isActive && !hasCurrentPatient && widget.queue.waitingCount > 0,
+                enabled:
+                    isActive &&
+                    !hasCurrentPatient &&
+                    widget.queue.waitingCount > 0 &&
+                    !widget.isBusy,
                 onTap: widget.onCallNext,
-                fullWidth: true, // NEW
+                fullWidth: true,
               ),
             ),
           ],
@@ -443,7 +697,10 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );
@@ -455,13 +712,13 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
     required String label,
     required bool enabled,
     required VoidCallback onTap,
-    bool fullWidth = false, // NEW
+    bool fullWidth = false,
   }) {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        width: fullWidth ? double.infinity : null, // NEW
-        alignment: fullWidth ? Alignment.center : null, // NEW
+        width: fullWidth ? double.infinity : null,
+        alignment: fullWidth ? Alignment.center : null,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
           color: enabled ? const Color(0xFF2E7D32) : const Color(0xFFE8E8E8),
@@ -494,13 +751,13 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
     required String label,
     required bool enabled,
     required VoidCallback onTap,
-    bool fullWidth = false, // NEW
+    bool fullWidth = false,
   }) {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        width: fullWidth ? double.infinity : null, // NEW
-        alignment: fullWidth ? Alignment.center : null, // NEW
+        width: fullWidth ? double.infinity : null,
+        alignment: fullWidth ? Alignment.center : null,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
           color: enabled ? AppColors.primaryPurple : const Color(0xFFE8E8E8),

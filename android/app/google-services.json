@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "706436969559",
+    "project_id": "hospitalqueuemanagements-d9c50",
+    "storage_bucket": "hospitalqueuemanagements-d9c50.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:706436969559:android:fe025fcedb523957031f12",
+        "android_client_info": {
+          "package_name": "com.example.queue_management_system"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAhzJGYzJ5AtRqlY6dzbLSVzkC4yTLSjvA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

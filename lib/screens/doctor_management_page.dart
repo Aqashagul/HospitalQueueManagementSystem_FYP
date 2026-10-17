@@ -1,8 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/core/app_typography.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
+import 'package:queue_management_system/screens/queue_admin_service.dart';
 import 'package:queue_management_system/widgets/doctor_image.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/appform_dialog.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/data_table_card.dart';
@@ -12,6 +14,8 @@ import 'package:queue_management_system/widgets/generic_p.dart/view_detail_docto
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
+import 'dart:async';
+
 
 class DoctorManagementPage extends StatefulWidget {
   const DoctorManagementPage({super.key});
@@ -27,6 +31,12 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
   // Handles text search across doctor name, department, and specialization.
   late final GenericSearchController<DoctorModel> doctorSearch;
 
+  // Today's queue entries of ALL doctors, live from Firestore. The
+  // "Patients" column and the "Free" card are worked out from these.
+  final QueueAdminService _queueService = QueueAdminService();
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _entriesSub;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _todayEntries = [];
+
   @override
   void initState() {
     super.initState();
@@ -39,16 +49,160 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     );
     // Rebuild whenever the search query or its results change.
     doctorSearch.addListener(() => setState(() {}));
+    // Refresh when Firestore data arrives or changes in the store.
+    AppdataStore().addListener(_onStoreChanged);
+
+    // Live queue data for the Patients column.
+    _entriesSub = _queueService.watchTodaysEntries().listen(
+      (snap) {
+        if (!mounted) return;
+        setState(() => _todayEntries = snap.docs);
+      },
+      onError: (Object e) {
+        _showErrorSnack(_friendlyError(e));
+      },
+    );
+  }
+
+  // Called whenever the store notifies (e.g. a Firestore snapshot arrived).
+  void _onStoreChanged() {
+    if (!mounted) return;
+    doctorSearch.updateItems(AppdataStore().doctors);
+    setState(() {});
   }
 
   @override
   void dispose() {
+    _entriesSub?.cancel();
+    AppdataStore().removeListener(_onStoreChanged);
     doctorSearch.dispose();
     super.dispose();
   }
 
-  // Opens the "Add New Doctor" form and appends the new doctor to the store on submit.
+  // Turns an exception into a short, readable message for the user.
+  String _friendlyError(Object e) {
+    if (e is FirebaseException) {
+      switch (e.code) {
+        case 'permission-denied':
+          return "You don't have permission to do this.";
+        case 'unavailable':
+        case 'network-request-failed':
+        case 'deadline-exceeded':
+          return "Network problem. Please check your internet and try again.";
+      }
+    }
+    return "Something went wrong. Please try again.";
+  }
+
+  void _showErrorSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+  }
+
+  void _showNoDepartmentDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("No Department Found"),
+        content: const Text("Please add a department first."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Deletes a doctor only if they have no patients waiting or in
+  // consultation. Otherwise shows a dialog explaining why it's blocked.
+  // Network / permission failures show a snackbar instead of failing silently.
+  // Today's key like "20261014", same format the patient app writes.
+  String _todayKey() {
+    final d = DateTime.now();
+    return '${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
+  }
+
+  bool _isActiveStatus(String? raw) {
+    switch ((raw ?? '').toLowerCase()) {
+      case 'waiting':
+      case 'in consultation':
+      case 'in-progress':
+      case 'in progress':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Counts today's Waiting / In Consultation patients for this doctor
+  // straight from Firestore (queue_entries). Reads from the server, so if
+  // the network is down it throws instead of silently returning 0.
+  Future<int> _firestoreActivePatients(String doctorId) async {
+    final snap = await FirebaseFirestore.instance
+        .collection('queue_entries')
+        .where('doctorId', isEqualTo: doctorId)
+        .where('dayKey', isEqualTo: _todayKey())
+        .get(const GetOptions(source: Source.server));
+    return snap.docs
+        .where((d) => _isActiveStatus(d.data()['status']?.toString()))
+        .length;
+  }
+
+  Future<void> _deleteDoctor(DoctorModel doc) async {
+    int activePatients;
+    try {
+      activePatients = await _firestoreActivePatients(doc.id.toString());
+    } catch (e) {
+      _showErrorSnack(_friendlyError(e));
+      return;
+    }
+    if (!mounted) return;
+
+    if (activePatients > 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Cannot Delete Doctor"),
+          content: Text(
+            "${doc.name} currently has $activePatients "
+            "${activePatients == 1 ? 'patient' : 'patients'} "
+            "(Waiting or In Consultation), so this doctor cannot be deleted. "
+            "Please wait until the queue is clear.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    try {
+      await AppdataStore().removeDoctor(doc);
+    } catch (e) {
+      _showErrorSnack(_friendlyError(e));
+    }
+  }
+
+  // Opens the "Add New Doctor" form and saves the doctor to Firestore on
+  // submit. The list refreshes automatically via the listener.
   void _openAddDoctorDialog() {
+    if (AppdataStore().departments.isEmpty) {
+      _showNoDepartmentDialog();
+      return;
+    }
     showDialog(
       context: context,
       builder: (_) => AppFormDialog(
@@ -73,30 +227,34 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
           const FormFieldConfig(key: "availability", label: "Availability", type: FieldType.pillSelector, options: ["Available", "Unavailable"]),
         ],
         onSubmit: (values) {
-          setState(() {
-            AppdataStore().doctors.insert(0,DoctorModel(
+          AppdataStore().addDoctor(
+            DoctorModel(
               name: values["name"],
               specialization: values["specialization"],
               department: values["department"],
               patientsCount: 0,
               status: values["availability"],
+              // NOTE: uploaded photos are not saved to Firestore yet.
               photoBytes: values["photo"],
               experience: values["experience"],
               workingHours: values["workingHours"],
               qualification: values["qualification"],
               tokenPrefix: values["tokenPrefix"],
-              fee:values["fee"] != null ? int.tryParse(values["fee"]) ?? 0 : 0,
-            ));
-            // Keep the search controller's source list in sync with the new doctor.
-            doctorSearch.updateItems(AppdataStore().doctors);
-          });
+              fee: int.tryParse(values["fee"]?.toString() ?? "") ?? 0,
+            ),
+          );
         },
       ),
     );
   }
 
   // Opens the "Edit Doctor" form pre-filled with the given doctor's data.
+  // Updates the same Firestore document (matched by id).
   void _openEditDoctorDialog(DoctorModel doc) {
+    if (AppdataStore().departments.isEmpty) {
+      _showNoDepartmentDialog();
+      return;
+    }
     showDialog(
       context: context,
       builder: (_) => AppFormDialog(
@@ -112,6 +270,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
           "workingHours": doc.workingHours,
           "qualification": doc.qualification,
           "tokenPrefix": doc.tokenPrefix,
+          "fee": doc.fee.toString(),
         },
         fields: [
           const FormFieldConfig(key: "photo", label: "Doctor Photo", type: FieldType.image),
@@ -132,25 +291,23 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
           const FormFieldConfig(key: "fee", label: "Doctor Fee", type: FieldType.text, hint: "e.g. 1500", isNumeric: true),
         ],
         onSubmit: (values) {
-          setState(() {
-            final index = AppdataStore().doctors.indexOf(doc);
-            if (index == -1) return;
-
-            AppdataStore().doctors[index] = DoctorModel(
+          AppdataStore().updateDoctor(
+            DoctorModel(
+              id: doc.id, // tells Firestore which document to update
               name: values["name"],
               specialization: values["specialization"],
               department: values["department"],
-              patientsCount: doc.patientsCount, 
+              patientsCount: doc.patientsCount,
               status: values["availability"],
               photoBytes: values["photo"],
+              photoAssetPath: doc.photoAssetPath, // preserved
               experience: values["experience"],
               workingHours: values["workingHours"],
               qualification: values["qualification"],
               tokenPrefix: values["tokenPrefix"],
-              fee: doc.fee, 
-            );
-            doctorSearch.updateItems(AppdataStore().doctors);
-          });
+              fee: int.tryParse(values["fee"]?.toString() ?? "") ?? doc.fee,
+            ),
+          );
         },
       ),
     );
@@ -179,10 +336,16 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             iconColor: const Color(0xFF6FCF97),
           ),
           DetailRow(
-            label: "Patients",
-            value: "${_activePatientsCount(doc.name)}",
+            label: "Patients (in queue)",
+            value: "${_activePatientsCount(doc.id)}",
             icon: Icons.people_outline,
             iconColor: const Color(0xFF6FCF97),
+          ),
+          DetailRow(
+            label: "Completed Today",
+            value: "${_completedTodayCount(doc.id)}",
+            icon: Icons.check_circle_outline,
+            iconColor: const Color(0xFF2E7D32),
           ),
           DetailRow(
             label: "Specialization",
@@ -196,7 +359,6 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             icon: Icons.event_available_outlined,
             iconColor: const Color(0xFFF2994A),
           ),
-         
           DetailRow(
             label: "Experience",
             value: doc.experience?.isNotEmpty == true ? doc.experience! : "—",
@@ -227,13 +389,25 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
   }
 
   // Number of patients currently assigned to this doctor who are either
-  // waiting or in consultation 
-  int _activePatientsCount(String doctorName) {
-    return AppdataStore().patient
-        .where((p) =>
-            p.doctor == doctorName &&
-            (p.status == "Waiting" || p.status == "In Consultation"))
-        .length;
+  // waiting or in consultation, counted from today's live queue entries.
+  int _activePatientsCount(String? doctorId) {
+    if (doctorId == null) return 0;
+    return _todayEntries.where((d) {
+      final data = d.data();
+      return data['doctorId'] == doctorId &&
+          _isActiveStatus(data['status']?.toString());
+    }).length;
+  }
+
+  // Number of patients this doctor has finished seeing today.
+  int _completedTodayCount(String? doctorId) {
+    if (doctorId == null) return 0;
+    return _todayEntries.where((d) {
+      final data = d.data();
+      return data['doctorId'] == doctorId &&
+          QueueAdminService.normalizeStatus(data['status']?.toString()) ==
+              'Completed';
+    }).length;
   }
 
   @override
@@ -248,7 +422,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
 
     // "Free" = has no active patients right now, regardless of availability status.
     final int freeCount =
-        allDoctors.where((d) => _activePatientsCount(d.name) == 0).length;
+        allDoctors.where((d) => _activePatientsCount(d.id) == 0).length;
 
     // Apply department filter first...
     List<DoctorModel> filteredDoctors = selectedDepartmentFilter == "Department"
@@ -265,7 +439,8 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
 
     // ...then intersect with the current search results.
     final searchedNames = doctorSearch.filteredItems.map((d) => d.name).toSet();
-    filteredDoctors = filteredDoctors.where((d) => searchedNames.contains(d.name)).toList();
+    filteredDoctors =
+        filteredDoctors.where((d) => searchedNames.contains(d.name)).toList();
 
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
@@ -276,12 +451,11 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             padding: const EdgeInsets.all(24),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final bool isMobile = constraints.maxWidth < 700; 
+                final bool isMobile = constraints.maxWidth < 700;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    
                     if (!isMobile) ...[
                       Row(
                         children: [
@@ -299,10 +473,10 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                     ] else
                       const SizedBox(height: 15),
 
- // Search bar, department/availability filters, and add-doctor button
+                    // Search bar, department/availability filters, add-doctor button
                     _buildToolbar(isMobile: isMobile),
                     const SizedBox(height: 24),
-                    
+
                     // Summary stat cards: total, available, unavailable, free
                     _buildStatCardsSection(
                       isMobile: isMobile,
@@ -312,8 +486,6 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                       freeCount: freeCount,
                     ),
                     const SizedBox(height: 24),
-
-                   
 
                     // Doctor records table
                     _buildTable(filteredDoctors, isMobile: isMobile),
@@ -335,7 +507,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     );
   }
 
-  // 4 stat cards 
+  // 4 stat cards
   Widget _buildStatCardsSection({
     required bool isMobile,
     required int totalDoctors,
@@ -448,7 +620,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     );
 
     if (isMobile) {
-      // fillWidth: true — these sit inside Expanded(), so isExpanded is safe here.
+      // fillWidth: true, because these sit inside Expanded().
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -484,8 +656,8 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
       );
     }
 
-    // fillWidth: false (default) — these sit directly in a Row without
-    // Expanded, so they must size to their content, not try to fill infinite width.
+    // fillWidth: false (default), because these sit directly in a Row without
+    // Expanded, so they must size to their content.
     return Row(
       children: [
         Expanded(child: searchBar),
@@ -510,8 +682,6 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     );
   }
 
-  
-  
   Widget _buildTable(List<DoctorModel> filteredDoctors, {required bool isMobile}) {
     final table = DataTableCard<DoctorModel>(
       items: filteredDoctors,
@@ -549,8 +719,10 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
         TableColumn<DoctorModel>(
           label: "Patients",
           flex: 1,
-          cellBuilder: (doc) =>
-              Text("${_activePatientsCount(doc.name)}", style: const TextStyle(fontSize: 14)),
+          cellBuilder: (doc) => Text(
+            "${_activePatientsCount(doc.id)}",
+            style: const TextStyle(fontSize: 14),
+          ),
         ),
         TableColumn<DoctorModel>(
           label: "Availability",
@@ -577,14 +749,11 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                 child: Icon(Icons.edit_outlined, size: 18, color: Colors.grey.shade700),
               ),
               const SizedBox(width: 14),
-              // Remove doctor record — no confirmation dialog currently
+              // Delete doctor from Firestore. Blocked (with a dialog) if the
+              // doctor has Waiting / In Consultation patients; errors show a
+              // snackbar. The list refreshes automatically via the listener.
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    AppdataStore().doctors.remove(doc);
-                    doctorSearch.updateItems(AppdataStore().doctors);
-                  });
-                },
+                onTap: () => _deleteDoctor(doc),
                 child: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
               ),
             ],
@@ -597,7 +766,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: SizedBox(width: 900, child: table), 
+      child: SizedBox(width: 900, child: table),
     );
   }
 
@@ -605,7 +774,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     required String value,
     required List<String> items,
     required ValueChanged<String?> onChanged,
-    bool fillWidth = false, 
+    bool fillWidth = false,
   }) {
     return Container(
       height: 48,
@@ -618,7 +787,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
-          isExpanded: fillWidth, 
+          isExpanded: fillWidth,
           icon: const Icon(Icons.keyboard_arrow_down, size: 20),
           items: items
               .map((item) => DropdownMenuItem(
@@ -626,7 +795,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                     child: Text(
                       item,
                       style: AppTypography.normaltext,
-                      overflow: TextOverflow.ellipsis, 
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ))
               .toList(),

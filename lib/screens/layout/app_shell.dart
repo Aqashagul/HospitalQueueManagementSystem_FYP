@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/core/app_typography.dart';
+import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/data/nav_items_data.dart';
 import 'package:queue_management_system/widgets/sidebar.dart';
+import 'package:queue_management_system/BACKEND/auth_service.dart';
 
 
 class AppShell extends StatefulWidget {
@@ -29,16 +31,27 @@ class _AppShellState extends State<AppShell> {
 
     if (isMobile) {
       return Scaffold(
-        appBar: AppBar(
-          backgroundColor: AppColors.white,
-          elevation: 0.5,
-             centerTitle: false, 
-          iconTheme: const IconThemeData(color: AppColors.primary),
-          title: Text(
-  navItems[selectedIndex].title,
-  style: AppTypography.title,
+       appBar: AppBar(
+  backgroundColor: AppColors.white,
+  elevation: 0.5,
+  centerTitle: false,
+  iconTheme: const IconThemeData(color: AppColors.primary),
+  title: Text(
+    navItems[selectedIndex].title,
+    style: AppTypography.title,
+  ),
+  actions: [
+    // Logs the admin out; the StreamBuilder in main.dart
+    // then switches back to the login screen automatically.
+    IconButton(
+      tooltip: 'Logout',
+      icon: const Icon(Icons.logout, color: AppColors.primary),
+      onPressed: () async {
+        await AuthService().signOut();
+      },
+    ),
+  ],
 ),
-        ),
         drawer: Drawer(
            width: 220,
   backgroundColor: AppColors.white,
@@ -63,5 +76,21 @@ class _AppShellState extends State<AppShell> {
         ],
       ),
     );
+  }
+
+
+    @override
+  void initState() {
+    super.initState();
+    //final store = AppdataStore();
+    // Starts listening to Firestore once the admin is logged in.
+    AppdataStore().startListening();
+  }
+
+  @override
+  void dispose() {
+    // Stops listening when the admin logs out.
+    AppdataStore().stopListening();
+    super.dispose();
   }
 }

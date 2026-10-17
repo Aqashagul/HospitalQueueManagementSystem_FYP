@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/core/app_typography.dart';
-import 'package:queue_management_system/data/appdata_store.dart';
+import 'package:queue_management_system/screens/queue_admin_service.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/shared_widgets.dart';
+import 'package:queue_management_system/widgets/reports_and_analytics/analytics_data.dart';
 import 'package:queue_management_system/widgets/reports_and_analytics/completed_vs_cancelled_chart.dart';
 import 'package:queue_management_system/widgets/reports_and_analytics/doctor_overload_chart.dart';
 import 'package:queue_management_system/widgets/reports_and_analytics/patients_by_department.dart';
@@ -12,6 +13,7 @@ import 'package:queue_management_system/widgets/reports_and_analytics/weekly_pat
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
 import 'package:queue_management_system/widgets/resuable/rounded_card.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 
 class ReportsPage extends StatefulWidget {
@@ -22,28 +24,86 @@ class ReportsPage extends StatefulWidget {
 }
 
 class _ReportsPageState extends State<ReportsPage> {
-  // Currently selected date-range filter. Not yet wired to actually
-  // filter the data below — only affects the dropdown's displayed value.
+  // Currently selected date-range filter. It decides which days of queue
+  // entries the stat cards and the charts are calculated from.
   String selectedRange = "Last 7 Days";
+
+  final QueueAdminService _service = QueueAdminService();
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = _buildStream();
+  }
+
+  DateTime _today() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  // First day (inclusive) of the selected range.
+  DateTime _rangeStart() {
+    final now = DateTime.now();
+    final today = _today();
+    switch (selectedRange) {
+      case "Last 30 Days":
+        return today.subtract(const Duration(days: 29));
+      case "This Month":
+        return DateTime(now.year, now.month, 1);
+      case "Last 7 Days":
+      default:
+        return today.subtract(const Duration(days: 6));
+    }
+  }
+
+  // How many days the selected range covers (today included).
+  int _rangeDays() => _today().difference(_rangeStart()).inDays + 1;
+
+  // The 7-day chart always needs the last 7 days, even when the selected
+  // range is shorter (like the first days of a month), so the stream starts
+  // from whichever of the two is earlier.
+  Stream<QuerySnapshot<Map<String, dynamic>>> _buildStream() {
+    final weekAgo = _today().subtract(const Duration(days: 6));
+    final start = _rangeStart().isBefore(weekAgo) ? _rangeStart() : weekAgo;
+    return _service.watchEntriesSince(QueueAdminService.dayKeyOf(start));
+  }
+
+  void _onRangeChanged(String? value) {
+    if (value == null) return;
+    setState(() {
+      selectedRange = value;
+      _stream = _buildStream(); // listen to the new range
+    });
+  }
+
+  String _statusOf(QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+      (d.data()['status']?.toString() ?? '').toLowerCase();
+
+  // Average minutes between taking a token and being called in.
+  // Returns null when nobody was called in this range yet.
+  int? _avgWaitingMinutes(QueueDocs docs) {
+    int totalMs = 0;
+    int count = 0;
+    for (final d in docs) {
+      final data = d.data();
+      final joined = data['joinedAt'];
+      final called = data['calledAt'];
+      if (joined is Timestamp && called is Timestamp) {
+        final diff =
+            called.toDate().difference(joined.toDate()).inMilliseconds;
+        if (diff >= 0) {
+          totalMs += diff;
+          count++;
+        }
+      }
+    }
+    if (count == 0) return null;
+    return (totalMs / count / 60000).round();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Pulls the full patient list from the shared in-memory store.
-    // No backend/API call here — all stats are derived client-side.
-    final patients = AppdataStore().patient;
-
-    final int totalTokens = patients.length;
-    final int completedCount =
-        patients.where((p) => p.status.toLowerCase() == "completed").length;
-    final int cancelledCount =
-        patients.where((p) => p.status.toLowerCase() == "cancelled").length;
-
-    // Hardcoded placeholder — not calculated from actual wait times yet.
-    const avgWaitingMinutes = 8;
-
-    final int completionPercent =
-        totalTokens == 0 ? 0 : ((completedCount / totalTokens) * 100).round();
-
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       body: Stack(
@@ -55,161 +115,246 @@ class _ReportsPageState extends State<ReportsPage> {
               builder: (context, constraints) {
                 final bool isMobile = constraints.maxWidth < 700;
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                   
-                    if (!isMobile) ...[
-                      Row(
-                        children: [
-                          Text("Reports & Analytics", style: AppTypography.title),
-                          const Spacer(),
-                          const LiveDateTimeWidget(),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "Analyze queue performance, patient flow, waiting times, and operational efficiency.",
-                        style: AppTypography.subtitle,
-                      ),
-                      const SizedBox(height: 24),
-                    ] else
-                      const SizedBox(height: 15),
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _stream,
+                  builder: (context, snapshot) {
+                    // Everything the stream gave us (at least the last 7 days).
+                    final QueueDocs allDocs = snapshot.data?.docs ?? [];
 
-                    // Date-range filter dropdown
-                          _buildFilterDropdown(
-                            icon: Icons.calendar_today_outlined,
-                            value: selectedRange,
-                            items: const ["Last 7 Days", "Last 30 Days", "This Month"],
-                            onChanged: (v) => setState(() => selectedRange = v!),
-                          ),
-                        
-                    const SizedBox(height: 20),
+                    // Only the days inside the selected range.
+                    final String startKey = QueueAdminService.dayKeyOf(
+                      _rangeStart(),
+                    );
+                    final QueueDocs docs = allDocs
+                        .where(
+                          (d) =>
+                              (d.data()['dayKey']?.toString() ?? '')
+                                  .compareTo(startKey) >=
+                              0,
+                        )
+                        .toList();
+                    final int rangeDays = _rangeDays();
 
-                    // Summary stat cards: total, completed, cancelled, avg wait, completion rate
-                   if (!isMobile) ...[
-  _buildStatCardsSection(
-    isMobile: isMobile,
-    totalTokens: totalTokens,
-    completedCount: completedCount,
-    cancelledCount: cancelledCount,
-    avgWaitingMinutes: avgWaitingMinutes,
-    completionPercent: completionPercent,
-  ),
-  const SizedBox(height: 28),
-],
+                    final int totalTokens = docs.length;
+                    final int completedCount =
+                        docs.where((d) => _statusOf(d) == "completed").length;
+                    final int cancelledCount =
+                        docs.where((d) => _statusOf(d) == "cancelled").length;
 
-                    // Weekly patient flow chart (7-day trend)
-                    RoundedCard(
-                      color: Colors.white,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SevenDayPatientsChart(),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                    // Real average wait, calculated from joinedAt -> calledAt.
+                    final int? avgWaitingMinutes = _avgWaitingMinutes(docs);
 
-                    // Peak hour + department distribution charts —
-                    // desktop: side by side. Mobile: stacked full-width.
-                    isMobile
-                        ? Column(
+                    final int completionPercent = totalTokens == 0
+                        ? 0
+                        : ((completedCount / totalTokens) * 100).round();
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!isMobile) ...[
+                          Row(
                             children: [
-                              RoundedCard(
-                                color: Colors.white,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text("Peak Hour Patient Count",
-                                        style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 16),
-                                    const PeakHourChart(),
-                                  ],
-                                ),
+                              Text(
+                                "Reports & Analytics",
+                                style: AppTypography.title,
                               ),
-                              const SizedBox(height: 20),
-                              RoundedCard(
-                                color: Colors.white,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text("Patients by Department",
-                                        style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 16),
-                                    const PatientsByDepartmentChart(),
-                                  ],
-                                ),
-                              ),
+                              const Spacer(),
+                              const LiveDateTimeWidget(),
                             ],
-                          )
-                        : Row(
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "Analyze queue performance, patient flow, waiting times, and operational efficiency.",
+                            style: AppTypography.subtitle,
+                          ),
+                          const SizedBox(height: 24),
+                        ] else
+                          const SizedBox(height: 15),
+
+                        // Date-range filter dropdown
+                        _buildFilterDropdown(
+                          icon: Icons.calendar_today_outlined,
+                          value: selectedRange,
+                          items: const [
+                            "Last 7 Days",
+                            "Last 30 Days",
+                            "This Month",
+                          ],
+                          onChanged: _onRangeChanged,
+                        ),
+
+                        if (snapshot.hasError) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            QueueAdminService.friendlyError(snapshot.error!),
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 20),
+
+                        // Summary stat cards: total, completed, cancelled,
+                        // avg wait, completion rate (live from Firestore)
+                        if (!isMobile) ...[
+                          _buildStatCardsSection(
+                            isMobile: isMobile,
+                            totalTokens: totalTokens,
+                            completedCount: completedCount,
+                            cancelledCount: cancelledCount,
+                            avgWaitingMinutes: avgWaitingMinutes,
+                            completionPercent: completionPercent,
+                          ),
+                          const SizedBox(height: 28),
+                        ],
+
+                        // Weekly patient flow chart (always the last 7 days)
+                        RoundedCard(
+                          color: Colors.white,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [SevenDayPatientsChart(docs: allDocs)],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Peak hour + department distribution charts —
+                        // desktop: side by side. Mobile: stacked full-width.
+                        isMobile
+                            ? Column(
+                                children: [
+                                  RoundedCard(
+                                    color: Colors.white,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "Peak Hour Patient Count",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        PeakHourChart(docs: docs),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  RoundedCard(
+                                    color: Colors.white,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "Patients by Department",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        PatientsByDepartmentChart(docs: docs),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: RoundedCard(
+                                      color: Colors.white,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            "Peak Hour Patient Count",
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          PeakHourChart(docs: docs),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 20),
+                                  Expanded(
+                                    child: RoundedCard(
+                                      color: Colors.white,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            "Patients by Department",
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          PatientsByDepartmentChart(docs: docs),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                        const SizedBox(height: 20),
+
+                        // Completed vs cancelled comparison chart
+                        RoundedCard(
+                          color: Colors.white,
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: RoundedCard(
-                                  color: Colors.white,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("Peak Hour Patient Count",
-                                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                                      const SizedBox(height: 16),
-                                      const PeakHourChart(),
-                                    ],
-                                  ),
+                              Text(
+                                "Completed vs Cancelled Queues",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: RoundedCard(
-                                  color: Colors.white,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("Patients by Department",
-                                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                                      const SizedBox(height: 16),
-                                      const PatientsByDepartmentChart(),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                              const SizedBox(height: 16),
+                              CompletedVsCancelledChart(docs: docs),
                             ],
                           ),
-                    const SizedBox(height: 20),
+                        ),
+                        const SizedBox(height: 20),
 
-                    // Completed vs cancelled comparison chart
-                    RoundedCard(
-                      color: Colors.white,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Completed vs Cancelled Queues",
-                              style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 16),
-                          const CompletedVsCancelledChart(),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                        // Doctor workload breakdown chart
+                        RoundedCard(
+                          color: Colors.white,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Doctor Workload",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              DoctorWorkloadChart(docs: docs, days: rangeDays),
+                            ],
+                          ),
+                        ),
 
-                    // Doctor workload breakdown chart
-                    RoundedCard(
-                      color: Colors.white,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Doctor Workload",
-                              style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 16),
-                          const DoctorWorkloadChart(),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 80),
-                  ],
+                        const SizedBox(height: 80),
+                      ],
+                    );
+                  },
                 );
               },
             ),
@@ -219,13 +364,13 @@ class _ReportsPageState extends State<ReportsPage> {
     );
   }
 
-  // 5 stat cards 
+  // 5 stat cards
   Widget _buildStatCardsSection({
     required bool isMobile,
     required int totalTokens,
     required int completedCount,
     required int cancelledCount,
-    required int avgWaitingMinutes,
+    required int? avgWaitingMinutes,
     required int completionPercent,
   }) {
     final card1 = StatCard(
@@ -254,7 +399,7 @@ class _ReportsPageState extends State<ReportsPage> {
       iconColor: const Color(0xFFB8860B),
       iconBgColor: const Color(0xFFFAF3D0),
       label: "Avg Waiting",
-      value: "$avgWaitingMinutes min",
+      value: avgWaitingMinutes == null ? "-- min" : "$avgWaitingMinutes min",
     );
     final card5 = StatCard(
       icon: Icons.trending_up,
@@ -265,8 +410,8 @@ class _ReportsPageState extends State<ReportsPage> {
     );
 
     if (isMobile) {
-  return const SizedBox.shrink();
-}
+      return const SizedBox.shrink();
+    }
 
     return Row(
       children: [
@@ -308,14 +453,16 @@ class _ReportsPageState extends State<ReportsPage> {
               value: value,
               icon: const Icon(Icons.keyboard_arrow_down, size: 18),
               items: items
-                  .map((item) => DropdownMenuItem(
-                        value: item,
-                        child: Text(
-                          item,
-                          style: const TextStyle(fontSize: 14),
-                          overflow: TextOverflow.ellipsis, 
-                        ),
-                      ))
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(
+                        item,
+                        style: const TextStyle(fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
                   .toList(),
               onChanged: onChanged,
             ),

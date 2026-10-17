@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:queue_management_system/data/analytics_controller.dart';
+
+
+// >>> Make sure this import points to where you saved analytics_data.dart <<<
+import 'analytics_data.dart';
 
 class DepartmentEntry {
   final String name;
@@ -14,12 +17,28 @@ class DepartmentEntry {
   });
 }
 
+// Each department's share of the tokens in the selected period, live from
+// Firestore.
 class PatientsByDepartmentChart extends StatelessWidget {
-  const PatientsByDepartmentChart({super.key});
+  final QueueDocs docs;
+  const PatientsByDepartmentChart({super.key, required this.docs});
 
   @override
   Widget build(BuildContext context) {
-    final data = AnalyticsController().getPatientsByDepartment();
+    final data = AnalyticsData.patientsByDepartment(docs);
+
+    // Nothing to draw (and PieChart would have empty sections).
+    if (data.isEmpty) {
+      return SizedBox(
+        height: 180,
+        child: Center(
+          child: Text(
+            "No patient data in this period",
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
+        ),
+      );
+    }
 
     final palette = [
       const Color(0xFFA25AE6),

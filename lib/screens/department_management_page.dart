@@ -1,8 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/core/app_typography.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/models/department_model.dart';
+import 'package:queue_management_system/models/doctor_model.dart';
+import 'package:queue_management_system/widgets/department_avatar.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/appform_dialog.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/data_table_card.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/search_controller.dart';
@@ -10,6 +13,7 @@ import 'package:queue_management_system/widgets/generic_p.dart/shared_widgets.da
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
+
 
 
 class DepartmentManagementPage extends StatefulWidget {
@@ -38,15 +42,105 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
     );
     // Rebuild whenever the search query or its results change.
     departmentSearch.addListener(() => setState(() {}));
+    // Refresh when Firestore data arrives or changes in the store.
+    AppdataStore().addListener(_onStoreChanged);
+  }
+
+  // Called whenever the store notifies (e.g. a Firestore snapshot arrived).
+  void _onStoreChanged() {
+    if (!mounted) return;
+    departmentSearch.updateItems(AppdataStore().departments);
+    setState(() {});
   }
 
   @override
   void dispose() {
+    AppdataStore().removeListener(_onStoreChanged);
     departmentSearch.dispose();
     super.dispose();
   }
 
-  // Opens the "Add New Department" form and appends the new department to the store on submit.
+  // Returns today's date like "Oct 13, 2026".
+  String _formatToday() {
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    final now = DateTime.now();
+    return "${months[now.month - 1]} ${now.day}, ${now.year}";
+  }
+
+  // Turns an exception into a short, readable message for the user.
+  String _friendlyError(Object e) {
+    if (e is FirebaseException) {
+      switch (e.code) {
+        case 'permission-denied':
+          return "You don't have permission to do this.";
+        case 'unavailable':
+        case 'network-request-failed':
+        case 'deadline-exceeded':
+          return "Network problem. Please check your internet and try again.";
+      }
+    }
+    return "Something went wrong. Please try again.";
+  }
+
+  void _showErrorSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+  }
+
+  // Today's key like "20261014", same format the patient app writes.
+  String _todayKey() {
+    final d = DateTime.now();
+    return '${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
+  }
+
+  bool _isActiveStatus(String? raw) {
+    switch ((raw ?? '').toLowerCase()) {
+      case 'waiting':
+      case 'in consultation':
+      case 'in-progress':
+      case 'in progress':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Counts today's Waiting / In Consultation patients for one doctor
+  // straight from Firestore (queue_entries). Reads from the server, so if
+  // the network is down it throws instead of silently returning 0.
+  Future<int> _firestoreActivePatients(String doctorId) async {
+    final snap = await FirebaseFirestore.instance
+        .collection('queue_entries')
+        .where('doctorId', isEqualTo: doctorId)
+        .where('dayKey', isEqualTo: _todayKey())
+        .get(const GetOptions(source: Source.server));
+    return snap.docs
+        .where((d) => _isActiveStatus(d.data()['status']?.toString()))
+        .length;
+  }
+
+  // Returns {doctor name: active patient count} for doctors that are busy.
+  Future<Map<String, int>> _busyDoctors(List<DoctorModel> doctors) async {
+    final Map<String, int> busy = {};
+    for (final doc in doctors) {
+      final active = await _firestoreActivePatients(doc.id.toString());
+      if (active > 0) busy[doc.name] = active;
+    }
+    return busy;
+  }
+
+  // Opens the "Add New Department" form and saves the department to
+  // Firestore on submit. The list refreshes automatically via the listener.
   void _openAddDepartmentDialog() {
     showDialog(
       context: context,
@@ -55,6 +149,11 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
         submitLabel: "Add Department",
         fields: const [
           FormFieldConfig(
+            key: "photo",
+            label: "Department Photo",
+            type: FieldType.image,
+          ),
+          FormFieldConfig(
             key: "name",
             label: "Department Name",
             type: FieldType.text,
@@ -66,7 +165,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
             label: "Head of Department",
             type: FieldType.text,
             hint: "e.g. Dr. Sarah Johnson",
-             required: true,
+            required: true,
           ),
           FormFieldConfig(
             key: "status",
@@ -76,28 +175,24 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
           ),
         ],
         onSubmit: (values) {
-          setState(() {
-            AppdataStore().departments.insert(0,
-              Department(
-                name: values["name"],
-                head: values["head"] ?? "",
-                assignedDoctors: 0,
-                status: values["status"],
-                // TODO: hardcoded — should use the actual current date.
-                createdDate: "Aug 14, 2026",
-              ),
-            );
-            // Keep the search controller's source list in sync, otherwise
-            // the new department won't show up in search results.
-            departmentSearch.updateItems(AppdataStore().departments);
-          });
+          AppdataStore().addDepartment(
+            Department(
+              name: values["name"],
+              head: values["head"] ?? "",
+              assignedDoctors: 0,
+              status: values["status"],
+              createdDate: _formatToday(),
+              photoBytes: values["photo"],
+            ),
+          );
         },
       ),
     );
   }
 
-  // Opens the "Edit Department" form pre-filled with the given department's data.
-  // assignedDoctors and createdDate are preserved as-is since they're not editable here.
+  // Opens the "Edit Department" form pre-filled with the given department's
+  // data. Updates the same Firestore document (matched by id).
+  // assignedDoctors and createdDate are preserved as-is.
   void _openEditDepartmentDialog(Department dept) {
     showDialog(
       context: context,
@@ -105,11 +200,17 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
         title: "Edit Department",
         submitLabel: "Save Changes",
         initialValues: {
+          "photo": dept.photoBytes,
           "name": dept.name,
           "head": dept.head,
           "status": dept.status,
         },
         fields: const [
+          FormFieldConfig(
+            key: "photo",
+            label: "Department Photo",
+            type: FieldType.image,
+          ),
           FormFieldConfig(
             key: "name",
             label: "Department Name",
@@ -131,22 +232,143 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
           ),
         ],
         onSubmit: (values) {
-          setState(() {
-            final index = AppdataStore().departments.indexOf(dept);
-            if (index == -1) return;
-
-            AppdataStore().departments[index] = Department(
+          AppdataStore().updateDepartment(
+            Department(
+              id: dept.id, // tells Firestore which document to update
               name: values["name"],
               head: values["head"] ?? "",
               assignedDoctors: dept.assignedDoctors, // preserved
               status: values["status"],
               createdDate: dept.createdDate, // preserved
-            );
-            departmentSearch.updateItems(AppdataStore().departments);
-          });
+              photoBytes: values["photo"],
+            ),
+          );
         },
       ),
     );
+  }
+
+  // Shown when a department cannot be deleted because some of its doctors
+  // still have patients waiting or in consultation.
+  Future<void> _showBlockedDeleteDialog(
+    Department dept,
+    Map<String, int> busyDoctors,
+  ) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("Cannot Delete Department"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "\"${dept.name}\" cannot be deleted because "
+              "${busyDoctors.length == 1 ? 'a doctor' : 'some doctors'} "
+              "in this department still ${busyDoctors.length == 1 ? 'has' : 'have'} "
+              "patients (Waiting or In Consultation):",
+            ),
+            const SizedBox(height: 12),
+            ...busyDoctors.entries.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  "• ${e.key} (${e.value} ${e.value == 1 ? 'patient' : 'patients'})",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Asks for confirmation before deleting a department. Blocks the delete if
+  // any doctor in it still has active patients. If it has doctors with no
+  // active patients, warns that they will be deleted too.
+  Future<void> _confirmDeleteDepartment(Department dept) async {
+    final store = AppdataStore();
+    final deptDoctors =
+        store.doctors.where((d) => d.department == dept.name).toList();
+    final doctorCount = deptDoctors.length;
+
+    // Block: any doctor here with waiting / in-consultation patients
+    // (checked live in Firestore).
+    Map<String, int> busyDoctors;
+    try {
+      busyDoctors = await _busyDoctors(deptDoctors);
+    } catch (e) {
+      _showErrorSnack(_friendlyError(e));
+      return;
+    }
+    if (!mounted) return;
+    if (busyDoctors.isNotEmpty) {
+      await _showBlockedDeleteDialog(dept, busyDoctors);
+      return;
+    }
+
+    // No doctors inside: delete straight away.
+    if (doctorCount == 0) {
+      try {
+        await store.removeDepartment(dept);
+      } catch (e) {
+        _showErrorSnack(_friendlyError(e));
+      }
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("Delete Department"),
+        content: Text(
+          "\"${dept.name}\" has $doctorCount "
+          "${doctorCount == 1 ? 'doctor' : 'doctors'}. "
+          "If you delete this department, "
+          "${doctorCount == 1 ? 'that doctor' : 'all of these doctors'} "
+          "will also be deleted. This cannot be undone.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // Re-check: a patient may have joined a queue while the dialog was open.
+      Map<String, int> nowBusy;
+      try {
+        nowBusy = await _busyDoctors(deptDoctors);
+      } catch (e) {
+        _showErrorSnack(_friendlyError(e));
+        return;
+      }
+      if (nowBusy.isNotEmpty) {
+        if (mounted) await _showBlockedDeleteDialog(dept, nowBusy);
+        return;
+      }
+
+      try {
+        await store.removeDepartmentWithDoctors(dept);
+      } catch (e) {
+        _showErrorSnack(_friendlyError(e));
+      }
+    }
   }
 
   @override
@@ -173,19 +395,15 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
             .length;
         return countB.compareTo(countA);
       });
-    } else if (selectedSort == "Recently Added") {
-      // Departments are stored in insertion order, so reversing puts the
-      // most recently added ones first.
-
     }
+    // "Recently Added": the store already keeps the departments newest
+    // first (it sorts by the createdAt timestamp), so nothing to do here.
 
     // Step 3: intersect the filtered+sorted list with the current search query.
-    final searchedNames = departmentSearch.filteredItems
-        .map((d) => d.name)
-        .toSet();
-    departments = departments
-        .where((d) => searchedNames.contains(d.name))
-        .toList();
+    final searchedNames =
+        departmentSearch.filteredItems.map((d) => d.name).toSet();
+    departments =
+        departments.where((d) => searchedNames.contains(d.name)).toList();
 
     // Stats always come from the full unfiltered list.
     final int totalDepartments = allDepartments.length;
@@ -208,16 +426,17 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
             padding: const EdgeInsets.all(24),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final bool isMobile = constraints.maxWidth < 700; // NEW
+                final bool isMobile = constraints.maxWidth < 700;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header — desktop/tablet pe original Row, mobile pe pura skip
+                    // Header: original Row on desktop/tablet, skipped on mobile.
                     if (!isMobile) ...[
                       Row(
                         children: [
-                          Text("Department Management", style: AppTypography.title),
+                          Text("Department Management",
+                              style: AppTypography.title),
                           const Spacer(),
                           const LiveDateTimeWidget(),
                         ],
@@ -231,10 +450,9 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
                     ] else
                       const SizedBox(height: 15),
 
- // Search bar, status filter, sort dropdown, and add-department button
+                    // Search bar, status filter, sort dropdown, add button
                     _buildToolbar(isMobile: isMobile),
                     const SizedBox(height: 24),
-
 
                     // Summary stat cards: total, assigned doctors, active, inactive
                     _buildStatCardsSection(
@@ -245,8 +463,6 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
                       inactiveCount: inactiveCount,
                     ),
                     const SizedBox(height: 24),
-
-                   
 
                     // Department records table
                     _buildTable(departments, isMobile: isMobile),
@@ -259,7 +475,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
           ),
         ],
       ),
-      // Secondary entry point for adding a department (mirrors the "Add Department" button above).
+      // Secondary entry point for adding a department.
       floatingActionButton: FloatingActionButton(
         onPressed: _openAddDepartmentDialog,
         backgroundColor: AppColors.primaryPurple,
@@ -268,7 +484,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
     );
   }
 
-  // 4 stat cards — desktop: 1 row of 4. Mobile: 2x2 grid with tighter sizing.
+  // 4 stat cards. Desktop: 1 row of 4. Mobile: 2x2 grid with tighter sizing.
   Widget _buildStatCardsSection({
     required bool isMobile,
     required int totalDepartments,
@@ -276,12 +492,11 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
     required int activeCount,
     required int inactiveCount,
   }) {
-   
- final cardPadding = isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18);
-final cardIconPadding = isMobile ? 8.0 : 12.0;
-final cardIconSize = isMobile ? 18.0 : 22.0;
-final cardValueFontSize = isMobile ? 18.0 : 22.0;
-//final cardLabelFontSize = isMobile ? 10.0 : null;
+    final cardPadding =
+        isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18);
+    final cardIconPadding = isMobile ? 8.0 : 12.0;
+    final cardIconSize = isMobile ? 18.0 : 22.0;
+    final cardValueFontSize = isMobile ? 18.0 : 22.0;
 
     final card1 = StatCard(
       icon: Icons.apartment_outlined,
@@ -293,7 +508,6 @@ final cardValueFontSize = isMobile ? 18.0 : 22.0;
       iconContainerPadding: cardIconPadding,
       iconSize: cardIconSize,
       valueFontSize: cardValueFontSize,
-     // labelFontSize: cardLabelFontSize,
     );
     final card2 = StatCard(
       icon: Icons.medical_services_outlined,
@@ -305,7 +519,6 @@ final cardValueFontSize = isMobile ? 18.0 : 22.0;
       iconContainerPadding: cardIconPadding,
       iconSize: cardIconSize,
       valueFontSize: cardValueFontSize,
-     // labelFontSize: cardLabelFontSize,
     );
     final card3 = StatCard(
       icon: Icons.check_circle_outline,
@@ -317,7 +530,6 @@ final cardValueFontSize = isMobile ? 18.0 : 22.0;
       iconContainerPadding: cardIconPadding,
       iconSize: cardIconSize,
       valueFontSize: cardValueFontSize,
-     // labelFontSize: cardLabelFontSize,
     );
     final card4 = StatCard(
       icon: Icons.error_outline,
@@ -329,32 +541,29 @@ final cardValueFontSize = isMobile ? 18.0 : 22.0;
       iconContainerPadding: cardIconPadding,
       iconSize: cardIconSize,
       valueFontSize: cardValueFontSize,
-      //labelFontSize: cardLabelFontSize,
     );
 
-
-if (isMobile) {
-  return Column(
-    children: [
-      Row(
+    if (isMobile) {
+      return Column(
         children: [
-          Expanded(child: card1),
-          const SizedBox(width: 8),
-          Expanded(child: card2),
+          Row(
+            children: [
+              Expanded(child: card1),
+              const SizedBox(width: 8),
+              Expanded(child: card2),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: card3),
+              const SizedBox(width: 8),
+              Expanded(child: card4),
+            ],
+          ),
         ],
-      ),
-      const SizedBox(height: 8),
-      Row(
-        children: [
-          Expanded(child: card3),
-          const SizedBox(width: 8),
-          Expanded(child: card4),
-        ],
-      ),
-    ],
-  );
-}
-
+      );
+    }
 
     return Row(
       children: [
@@ -369,7 +578,7 @@ if (isMobile) {
     );
   }
 
-  // Search bar + filters + add button — desktop: 1 row. Mobile: stacked.
+  // Search bar + filters + add button. Desktop: 1 row. Mobile: stacked.
   Widget _buildToolbar({required bool isMobile}) {
     final searchBar = DashboardSearchBar(
       hintText: "Search department...",
@@ -389,7 +598,7 @@ if (isMobile) {
     );
 
     if (isMobile) {
-      // fillWidth: true — these sit inside Expanded(), so isExpanded is safe here.
+      // fillWidth: true, because these sit inside Expanded().
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -401,7 +610,8 @@ if (isMobile) {
                 child: _buildDropdown(
                   value: selectedStatusFilter,
                   items: const ["All Status", "Active", "Inactive"],
-                  onChanged: (value) => setState(() => selectedStatusFilter = value!),
+                  onChanged: (value) =>
+                      setState(() => selectedStatusFilter = value!),
                   fillWidth: true,
                 ),
               ),
@@ -423,8 +633,8 @@ if (isMobile) {
       );
     }
 
-    // fillWidth: false (default) — these sit directly in a Row without
-    // Expanded, so they must size to their content, not try to fill infinite width.
+    // fillWidth: false (default), because these sit directly in a Row
+    // without Expanded, so they must size to their content.
     return Row(
       children: [
         Expanded(child: searchBar),
@@ -447,9 +657,8 @@ if (isMobile) {
     );
   }
 
-  // Table — desktop: renders as-is (flex columns fit the wide screen).
-  // Mobile: wrapped in horizontal scroll with a fixed min-width so flex
-  // columns don't get squeezed (this is what was cutting off the status pill text).
+  // Table. Desktop: renders as-is. Mobile: wrapped in horizontal scroll
+  // with a fixed min-width so flex columns don't get squeezed.
   Widget _buildTable(List<Department> departments, {required bool isMobile}) {
     final table = DataTableCard<Department>(
       items: departments,
@@ -460,7 +669,8 @@ if (isMobile) {
           flex: 3,
           cellBuilder: (dept) => Row(
             children: [
-              InitialsAvatar(name: dept.name),
+              // Picture added by the admin, or initials when there is none.
+              DepartmentAvatar(department: dept),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -530,17 +740,11 @@ if (isMobile) {
                 ),
               ),
               const SizedBox(width: 16),
-              // Remove department — delegated to the store so it
-              // can also handle any related cleanup.
+              // Delete department from Firestore. Blocked if any of its
+              // doctors has active patients. The list refreshes
+              // automatically via the listener.
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    AppdataStore().removeDepartment(dept);
-                    departmentSearch.updateItems(
-                      AppdataStore().departments,
-                    );
-                  });
-                },
+                onTap: () => _confirmDeleteDepartment(dept),
                 child: const Icon(
                   Icons.delete_outline,
                   size: 18,
@@ -557,7 +761,7 @@ if (isMobile) {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: SizedBox(width: 900, child: table), // NEW: gives columns room so they don't squeeze
+      child: SizedBox(width: 900, child: table),
     );
   }
 
@@ -566,7 +770,7 @@ if (isMobile) {
     required List<String> items,
     required ValueChanged<String?> onChanged,
     String prefixLabel = "",
-    bool fillWidth = false, // CHANGED: only stretch when the caller has bounded width (Expanded)
+    bool fillWidth = false, // only stretch when the caller has bounded width
   }) {
     return Container(
       height: 48,
@@ -574,12 +778,15 @@ if (isMobile) {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color.fromARGB(255, 196, 196, 196), width: 0.5),
+        border: Border.all(
+          color: const Color.fromARGB(255, 196, 196, 196),
+          width: 0.5,
+        ),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
-          isExpanded: fillWidth, // CHANGED: was always true — crashed when placed directly in a Row
+          isExpanded: fillWidth,
           icon: const Icon(Icons.keyboard_arrow_down, size: 20),
           items: items.map((item) {
             return DropdownMenuItem(
@@ -587,7 +794,7 @@ if (isMobile) {
               child: Text(
                 "$prefixLabel$item",
                 style: AppTypography.normaltext,
-                overflow: TextOverflow.ellipsis, // NEW
+                overflow: TextOverflow.ellipsis,
               ),
             );
           }).toList(),

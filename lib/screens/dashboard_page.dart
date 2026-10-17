@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/core/app_typography.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
+import 'package:queue_management_system/screens/queue_admin_service.dart';
 import 'package:queue_management_system/widgets/dashboard_widgets/Queue_traffic_line_chart.dart';
 import 'package:queue_management_system/widgets/dashboard_widgets/current_queue.dart';
 import 'package:queue_management_system/widgets/dashboard_widgets/doctor_patient_donut_chart.dart';
@@ -11,22 +12,63 @@ import 'package:queue_management_system/widgets/resuable/icon_circle.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
 import 'package:queue_management_system/widgets/resuable/rounded_card.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 
-class DashboardPage extends StatelessWidget {
+
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final patients = AppdataStore().patient;
-    final doctors = AppdataStore().doctors;
+  State<DashboardPage> createState() => _DashboardPageState();
+}
 
-    final int patientsWaiting = patients.where((p) => p.status == "Waiting").length;
-    final int patientsServed = patients.where((p) => p.status == "Completed").length;
-    final int inConsultation = patients.where((p) => p.status == "In Consultation").length;
-    final int totalPatients = patients.length;
+class _DashboardPageState extends State<DashboardPage> {
+  // Today's queue entries of ALL doctors, live from Firestore.
+  final QueueAdminService _service = QueueAdminService();
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = _service.watchTodaysEntries();
+    // Doctors/departments come from the store; refresh when they change.
+    AppdataStore().addListener(_onStoreChanged);
+  }
+
+  void _onStoreChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    AppdataStore().removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
+  // How many of today's entries have this status.
+  int _countStatus(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String status,
+  ) {
+    return docs
+        .where(
+          (d) =>
+              QueueAdminService.normalizeStatus(
+                d.data()['status']?.toString(),
+              ) ==
+              status,
+        )
+        .length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final doctors = AppdataStore().doctors;
     final int totalDepartments = AppdataStore().departments.length;
-    final int availableDoctors = doctors.where((d) => d.status == "Available").length;
+    final int availableDoctors =
+        doctors.where((d) => d.status == "Available").length;
 
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
@@ -39,76 +81,100 @@ class DashboardPage extends StatelessWidget {
               builder: (context, constraints) {
                 final bool isMobile = constraints.maxWidth < 700;
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-               
-                    if (!isMobile) ...[
-                      Row(
-                        children: [
-                          Text("Dashboard", style: AppTypography.title),
-                          const Spacer(),
-                          const LiveDateTimeWidget(),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "A quick snapshot of today's hospital queue, patients, doctors, and overall activity.",
-                        style: AppTypography.subtitle,
-                      ),
-                      const SizedBox(height: 25),
-                    ] else
-                      const SizedBox(height: 15),
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _stream,
+                  builder: (context, snapshot) {
+                    // Zeros while loading, real numbers once data arrives.
+                    final docs = snapshot.data?.docs ?? [];
 
-                    // Top stats section
-                    _buildStatsSection(
-                      isMobile: isMobile,
-                      patientsWaiting: patientsWaiting,
-                      patientsServed: patientsServed,
-                      inConsultation: inConsultation,
-                      totalPatients: totalPatients,
-                      totalDepartments: totalDepartments,
-                      availableDoctors: availableDoctors,
-                    ),
+                    final int patientsWaiting = _countStatus(docs, "Waiting");
+                    final int patientsServed = _countStatus(docs, "Completed");
+                    final int inConsultation =
+                        _countStatus(docs, "In Consultation");
+                    final int totalPatients = docs.length;
 
-                    const SizedBox(height: 15),
-
-                    isMobile
-                        ? Column(
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!isMobile) ...[
+                          Row(
                             children: [
-                              RoundedCard(
-                                color: Colors.white,
-                                width: double.infinity,
-                                child: _queueTrafficContent(),
-                              ),
-                              const SizedBox(height: 10),
-                              RoundedCard(
-                                color: Colors.white,
-                                width: double.infinity,
-                                child: _donutContent(),
-                              ),
-                            ],
-                          )
-                        : Row(
-                            children: [
-                              RoundedCard(
-                                color: Colors.white,
-                                width: 680,
-                                child: _queueTrafficContent(),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: RoundedCard(
-                                  color: Colors.white,
-                                  child: _donutContent(),
-                                ),
-                              ),
+                              Text("Dashboard", style: AppTypography.title),
+                              const Spacer(),
+                              const LiveDateTimeWidget(),
                             ],
                           ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "A quick snapshot of today's hospital queue, patients, doctors, and overall activity.",
+                            style: AppTypography.subtitle,
+                          ),
+                          const SizedBox(height: 25),
+                        ] else
+                          const SizedBox(height: 15),
 
-                    const SizedBox(height: 10),
-                    RoundedCard(child: CurrentQueue()),
-                  ],
+                        if (snapshot.hasError) ...[
+                          Text(
+                            QueueAdminService.friendlyError(snapshot.error!),
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // Top stats section (live from Firestore)
+                        _buildStatsSection(
+                          isMobile: isMobile,
+                          patientsWaiting: patientsWaiting,
+                          patientsServed: patientsServed,
+                          inConsultation: inConsultation,
+                          totalPatients: totalPatients,
+                          totalDepartments: totalDepartments,
+                          availableDoctors: availableDoctors,
+                        ),
+
+                        const SizedBox(height: 15),
+
+                        isMobile
+                            ? Column(
+                                children: [
+                                  RoundedCard(
+                                    color: Colors.white,
+                                    width: double.infinity,
+                                    child: _queueTrafficContent(),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  RoundedCard(
+                                    color: Colors.white,
+                                    width: double.infinity,
+                                    child: _donutContent(),
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                children: [
+                                  RoundedCard(
+                                    color: Colors.white,
+                                    width: 680,
+                                    child: _queueTrafficContent(),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: RoundedCard(
+                                      color: Colors.white,
+                                      child: _donutContent(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                        const SizedBox(height: 10),
+                        RoundedCard(child: CurrentQueue()),
+                      ],
+                    );
+                  },
                 );
               },
             ),
@@ -117,7 +183,6 @@ class DashboardPage extends StatelessWidget {
       ),
     );
   }
-
 
   Widget _buildStatsSection({
     required bool isMobile,
@@ -179,7 +244,9 @@ class DashboardPage extends StatelessWidget {
                 iconBgColor: Colors.deepPurple.shade50,
                 label: "In Consultation",
                 value: "$inConsultation",
-                padding: isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18),
+                padding: isMobile
+                    ? const EdgeInsets.all(12)
+                    : const EdgeInsets.all(18),
                 iconContainerPadding: isMobile ? 8 : 12,
                 iconSize: isMobile ? 18 : 22,
                 valueFontSize: isMobile ? 18 : 22,
@@ -193,7 +260,9 @@ class DashboardPage extends StatelessWidget {
                 iconBgColor: Colors.deepPurple.shade50,
                 label: "Total Patients",
                 value: "$totalPatients",
-                padding: isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18),
+                padding: isMobile
+                    ? const EdgeInsets.all(12)
+                    : const EdgeInsets.all(18),
                 iconContainerPadding: isMobile ? 8 : 12,
                 iconSize: isMobile ? 18 : 22,
                 valueFontSize: isMobile ? 18 : 22,
@@ -211,7 +280,9 @@ class DashboardPage extends StatelessWidget {
                 iconBgColor: const Color(0xFFE4D9F9),
                 label: "Departments",
                 value: "$totalDepartments",
-                padding: isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18),
+                padding: isMobile
+                    ? const EdgeInsets.all(12)
+                    : const EdgeInsets.all(18),
                 iconContainerPadding: isMobile ? 8 : 12,
                 iconSize: isMobile ? 18 : 22,
                 valueFontSize: isMobile ? 18 : 22,
@@ -225,7 +296,9 @@ class DashboardPage extends StatelessWidget {
                 iconBgColor: Colors.deepPurple.shade50,
                 label: "Available Doctors",
                 value: "$availableDoctors",
-                padding: isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18),
+                padding: isMobile
+                    ? const EdgeInsets.all(12)
+                    : const EdgeInsets.all(18),
                 iconContainerPadding: isMobile ? 8 : 12,
                 iconSize: isMobile ? 18 : 22,
                 valueFontSize: isMobile ? 18 : 22,
@@ -236,16 +309,15 @@ class DashboardPage extends StatelessWidget {
       ],
     );
 
-    
-   if (isMobile) {
-  return Row(
-    children: [
-      Expanded(child: gradientCard1),
-      const SizedBox(width: 12),
-      Expanded(child: gradientCard2),
-    ],
-  );
-}
+    if (isMobile) {
+      return Row(
+        children: [
+          Expanded(child: gradientCard1),
+          const SizedBox(width: 12),
+          Expanded(child: gradientCard2),
+        ],
+      );
+    }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,7 +376,10 @@ class DashboardPage extends StatelessWidget {
           children: [
             Text(
               "Queue Traffic",
-              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const Spacer(),
             Text(

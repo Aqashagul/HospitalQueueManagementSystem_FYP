@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:queue_management_system/core/app_color.dart';
-import 'package:queue_management_system/data/appdata_store.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:queue_management_system/screens/queue_admin_service.dart';
 
+// >>> ADD THE IMPORT FOR QueueAdminService HERE <<<
+// (the same file your Queue Management page imports it from.)
+// AppdataStore is no longer needed in this file.
 
 class QueueEntry {
   final String token;
@@ -21,9 +25,9 @@ class QueueEntry {
 }
 
 // Dashboard widget showing all patients who are still active in the
-// queue (i.e. not completed or cancelled). Desktop/laptop: a table
-// layout. Mobile: compact stacked entry cards (a 5-column table would
-// be squeezed unreadable on a phone width).
+// queue (i.e. not completed or cancelled), live from Firestore.
+// Desktop/laptop: a table layout. Mobile: compact stacked entry cards (a
+// 5-column table would be squeezed unreadable on a phone width).
 // Shows the 6 most recently registered by default, with a "View more"
 // toggle to reveal the rest.
 class CurrentQueue extends StatefulWidget {
@@ -38,25 +42,46 @@ class _CurrentQueueState extends State<CurrentQueue> {
   bool _showAll = false;
   bool _isViewMoreHovered = false;
 
-  // Live patients from the store, filtered to active ones only and
-  // sorted so the most recently registered patient comes first.
-  List<QueueEntry> get _allEntries {
-    final activePatients = AppdataStore()
-        .patient
-        .where((p) => p.status != "Completed" && p.status != "Cancelled")
-        .toList();
+  // Today's queue entries of all doctors, live from Firestore.
+  final QueueAdminService _service = QueueAdminService();
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
 
-    activePatients.sort((a, b) => b.registrationTime.compareTo(a.registrationTime));
+  @override
+  void initState() {
+    super.initState();
+    _stream = _service.watchTodaysEntries();
+  }
 
-    return activePatients
-        .map((p) => QueueEntry(
-              token: p.token,
-              patientName: p.name,
-              doctorName: p.doctor,
-              department: p.department,
-              status: p.status,
-            ))
-        .toList();
+  DateTime _joinedOf(QueryDocumentSnapshot<Map<String, dynamic>> d) {
+    final t = d.data()['joinedAt'];
+    // joinedAt is null for a moment right after a patient joins (the
+    // server timestamp is still being written), so treat that as "now".
+    return t is Timestamp ? t.toDate() : DateTime.now();
+  }
+
+  // Active entries only (not completed / cancelled), most recently
+  // registered patient first.
+  List<QueueEntry> _entriesFrom(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final active = docs.where((d) {
+      final s = QueueAdminService.normalizeStatus(
+        d.data()['status']?.toString(),
+      );
+      return s != "Completed" && s != "Cancelled";
+    }).toList()
+      ..sort((a, b) => _joinedOf(b).compareTo(_joinedOf(a)));
+
+    return active.map((d) {
+      final data = d.data();
+      return QueueEntry(
+        token: data['token']?.toString() ?? '--',
+        patientName: data['patientName']?.toString() ?? '',
+        doctorName: data['doctorName']?.toString() ?? '',
+        department: data['department']?.toString() ?? '',
+        status: QueueAdminService.normalizeStatus(data['status']?.toString()),
+      );
+    }).toList();
   }
 
   // Flex ratios shared by the header row and every desktop data row, so
@@ -71,108 +96,160 @@ class _CurrentQueueState extends State<CurrentQueue> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder( // this widget decides its own mobile/desktop layout
-      builder: (context, constraints) {
-        final bool isMobile = constraints.maxWidth < 700; // NEW
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _stream,
+      builder: (context, snapshot) {
+        final bool loading = !snapshot.hasData && !snapshot.hasError;
+        final allEntries = _entriesFrom(snapshot.data?.docs ?? []);
 
-        final allEntries = _allEntries;
-        final bool hasMore = allEntries.length > _previewCount;
-        final entriesToShow = _showAll ? allEntries : allEntries.take(_previewCount).toList();
+        return LayoutBuilder(
+          // this widget decides its own mobile/desktop layout
+          builder: (context, constraints) {
+            final bool isMobile = constraints.maxWidth < 700;
 
-        return Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Recently Added Patients",
-                style: GoogleFonts.inter(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
+            final bool hasMore = allEntries.length > _previewCount;
+            final entriesToShow = _showAll
+                ? allEntries
+                : allEntries.take(_previewCount).toList();
+
+            return Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(height: 28),
-
-              if (!isMobile) ...[
-                _buildHeaderRow(),
-                const Divider(height: 24),
-              ],
-
-              // Built with Column.generate instead of ListView.builder since
-              // this already sits inside a SingleChildScrollView on the
-              // dashboard page.
-              ...List.generate(entriesToShow.length, (index) {
-                final entry = entriesToShow[index];
-                final isLast = index == entriesToShow.length - 1;
-
-                if (isMobile) {
-                  return _buildMobileEntryCard(entry, isLast); // NEW
-                }
-
-                return Column(
-                  children: [
-                    _buildDataRow(entry),
-                    if (!isLast) const Divider(height: 24),
-                  ],
-                );
-              }),
-
-              if (hasMore) ...[
-                const SizedBox(height: 16),
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  onEnter: (_) => setState(() => _isViewMoreHovered = true),
-                  onExit: (_) => setState(() => _isViewMoreHovered = false),
-                  child: GestureDetector(
-                    onTap: () => setState(() => _showAll = !_showAll),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _isViewMoreHovered
-                            ? Color.lerp(AppColors.primaryPurple, Colors.black, 0.1)
-                            : AppColors.primaryPurple,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: _isViewMoreHovered
-                            ? [
-                                BoxShadow(
-                                  color: AppColors.primaryPurple.withValues(alpha: .35),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ]
-                            : [],
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            _showAll ? "View less" : "View more",
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            _showAll ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                            size: 18,
-                            color: Colors.white,
-                          ),
-                        ],
-                      ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Recently Added Patients",
+                    style: GoogleFonts.inter(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ),
-              ],
-            ],
-          ),
+                  const SizedBox(height: 28),
+
+                  if (snapshot.hasError)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          QueueAdminService.friendlyError(snapshot.error!),
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (allEntries.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          "No active patients in the queue right now.",
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    )
+                  else ...[
+                    if (!isMobile) ...[
+                      _buildHeaderRow(),
+                      const Divider(height: 24),
+                    ],
+
+                    // Built with List.generate instead of ListView.builder
+                    // since this already sits inside a
+                    // SingleChildScrollView on the dashboard page.
+                    ...List.generate(entriesToShow.length, (index) {
+                      final entry = entriesToShow[index];
+                      final isLast = index == entriesToShow.length - 1;
+
+                      if (isMobile) {
+                        return _buildMobileEntryCard(entry, isLast);
+                      }
+
+                      return Column(
+                        children: [
+                          _buildDataRow(entry),
+                          if (!isLast) const Divider(height: 24),
+                        ],
+                      );
+                    }),
+                  ],
+
+                  if (hasMore) ...[
+                    const SizedBox(height: 16),
+                    MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      onEnter: (_) =>
+                          setState(() => _isViewMoreHovered = true),
+                      onExit: (_) =>
+                          setState(() => _isViewMoreHovered = false),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _showAll = !_showAll),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: _isViewMoreHovered
+                                ? Color.lerp(
+                                    AppColors.primaryPurple,
+                                    Colors.black,
+                                    0.1,
+                                  )
+                                : AppColors.primaryPurple,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: _isViewMoreHovered
+                                ? [
+                                    BoxShadow(
+                                      color: AppColors.primaryPurple
+                                          .withValues(alpha: .35),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ]
+                                : [],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                _showAll ? "View less" : "View more",
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                _showAll
+                                    ? Icons.keyboard_arrow_up
+                                    : Icons.keyboard_arrow_down,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -189,11 +266,26 @@ class _CurrentQueueState extends State<CurrentQueue> {
 
     return Row(
       children: [
-        Expanded(flex: _columnFlex["token"]!, child: Text("Token", style: headerStyle)),
-        Expanded(flex: _columnFlex["patient"]!, child: Text("Patient", style: headerStyle)),
-        Expanded(flex: _columnFlex["doctor"]!, child: Text("Doctor", style: headerStyle)),
-        Expanded(flex: _columnFlex["department"]!, child: Text("Department", style: headerStyle)),
-        Expanded(flex: _columnFlex["status"]!, child: Text("Status", style: headerStyle)),
+        Expanded(
+          flex: _columnFlex["token"]!,
+          child: Text("Token", style: headerStyle),
+        ),
+        Expanded(
+          flex: _columnFlex["patient"]!,
+          child: Text("Patient", style: headerStyle),
+        ),
+        Expanded(
+          flex: _columnFlex["doctor"]!,
+          child: Text("Doctor", style: headerStyle),
+        ),
+        Expanded(
+          flex: _columnFlex["department"]!,
+          child: Text("Department", style: headerStyle),
+        ),
+        Expanded(
+          flex: _columnFlex["status"]!,
+          child: Text("Status", style: headerStyle),
+        ),
       ],
     );
   }

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:queue_management_system/data/appdata_store.dart';
+import 'package:queue_management_system/models/department_model.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
-import '../models/department.dart';
 import 'doctor_list_screen.dart';
+
+const bool _hideInactiveDepartments = true;
 
 class DepartmentListScreen extends StatefulWidget {
   const DepartmentListScreen({super.key});
@@ -13,17 +16,21 @@ class DepartmentListScreen extends StatefulWidget {
 
 class _DepartmentListScreenState extends State<DepartmentListScreen> {
   final TextEditingController _searchController = TextEditingController();
-  List<Department> _filteredDepartments = sampleDepartments;
+  String _query = '';
 
   void _onSearchChanged(String query) {
-    setState(() {
-      _filteredDepartments = sampleDepartments
-          .where(
-            (dept) =>
-                dept.name.toLowerCase().contains(query.trim().toLowerCase()),
-          )
-          .toList();
-    });
+    setState(() => _query = query.trim().toLowerCase());
+  }
+
+  // Departments come live from Firestore (the same data the admin manages).
+  List<Department> _visibleDepartments() {
+    return AppdataStore().departments.where((dept) {
+      if (_hideInactiveDepartments &&
+          dept.status.toLowerCase() != 'active') {
+        return false;
+      }
+      return dept.name.toLowerCase().contains(_query);
+    }).toList();
   }
 
   @override
@@ -140,10 +147,17 @@ class _DepartmentListScreenState extends State<DepartmentListScreen> {
                   ),
                   const SizedBox(height: 22),
 
-                  // Department grid
+                  // Department grid. ListenableBuilder rebuilds it whenever
+                  // the store changes (e.g. the admin adds a department or
+                  // changes its picture).
                   Expanded(
-                    child: _filteredDepartments.isEmpty
-                        ? Center(
+                    child: ListenableBuilder(
+                      listenable: AppdataStore(),
+                      builder: (context, _) {
+                        final departments = _visibleDepartments();
+
+                        if (departments.isEmpty) {
+                          return Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -161,32 +175,36 @@ class _DepartmentListScreenState extends State<DepartmentListScreen> {
                                 ),
                               ],
                             ),
-                          )
-                        : GridView.builder(
-                            padding: const EdgeInsets.only(bottom: 20),
-                            itemCount: _filteredDepartments.length,
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
-                                  childAspectRatio: 1.05,
-                                ),
-                            itemBuilder: (context, index) {
-                              final dept = _filteredDepartments[index];
-                              return _DepartmentCard(
-                                department: dept,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          DoctorListScreen(department: dept),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
+                          );
+                        }
+
+                        return GridView.builder(
+                          padding: const EdgeInsets.only(bottom: 20),
+                          itemCount: departments.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 1.05,
+                              ),
+                          itemBuilder: (context, index) {
+                            final dept = departments[index];
+                            return _DepartmentCard(
+                              department: dept,
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        DoctorListScreen(department: dept),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -203,8 +221,25 @@ class _DepartmentCard extends StatelessWidget {
   final VoidCallback onTap;
   const _DepartmentCard({required this.department, required this.onTap});
 
+  // Shown when the admin has not added a picture for this department: the
+  // department's initials (same idea as the admin dashboard).
+  String get _initials {
+    final words = department.name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return '?';
+    if (words.length == 1) return words.first[0].toUpperCase();
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
+    // The picture the admin uploaded for this department, if any.
+    final photo = department.photoBytes;
+    final bool hasPhoto = photo != null && photo.isNotEmpty;
+
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: onTap,
@@ -227,6 +262,8 @@ class _DepartmentCard extends StatelessWidget {
             Container(
               width: 86,
               height: 86,
+              alignment: Alignment.center,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
                 gradient: LinearGradient(
@@ -243,10 +280,22 @@ class _DepartmentCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Image.asset(department.iconPath, fit: BoxFit.contain),
-              ),
+              child: hasPhoto
+                  ? Image.memory(
+                      photo,
+                      width: 86,
+                      height: 86,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    )
+                  : Text(
+                      _initials,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
             ),
             const SizedBox(height: 12),
             Text(

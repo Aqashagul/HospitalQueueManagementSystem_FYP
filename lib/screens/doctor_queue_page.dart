@@ -1,11 +1,16 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:queue_management_system/call_patient.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
-import 'package:queue_management_system/data/queue_detail_controller.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
 import 'package:queue_management_system/models/doctor_queue_model.dart';
+import 'package:queue_management_system/screens/queue_admin_service.dart';
 import 'package:queue_management_system/widgets/doctor_image.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/shared_widgets.dart';
+
 
 class DoctorQueueDetailPage extends StatefulWidget {
   final String doctorName;
@@ -28,8 +33,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   // overriding the default auto-selected patient.
   bool _hasManualSelection = false;
 
- 
-  int _mobilePanelIndex = 0; 
+  int _mobilePanelIndex = 0;
 
   // Per-button loading flags, shown as spinners while an action is in flight.
   bool _isCompleting = false;
@@ -37,8 +41,45 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   bool _isSkipping = false;
   bool _isCancelling = false;
 
-  final PatientDetailQueueController _controller =
-      PatientDetailQueueController();
+  // Live queue data for this doctor (today) straight from Firestore.
+  final QueueAdminService _service = QueueAdminService();
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _docs = [];
+  bool _loaded = false;
+  String? _loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = _doctorId;
+    if (id == null) {
+      _loaded = true; // doctor not found: nothing to listen to
+      return;
+    }
+    _sub = _service.watchTodaysEntriesForDoctor(id).listen(
+      (snap) {
+        if (!mounted) return;
+        setState(() {
+          _docs = snap.docs;
+          _loaded = true;
+          _loadError = null;
+        });
+      },
+      onError: (Object e) {
+        if (!mounted) return;
+        setState(() {
+          _loadError = QueueAdminService.friendlyError(e);
+          _loaded = true;
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
 
   // Formats a DateTime as "h:mm AM/PM".
   String _formatTime(DateTime time) {
@@ -60,47 +101,120 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     }
   }
 
-  // All patients currently waiting for this doctor, mapped into the
-  // QueuePatient view model.
-  // Note: registrationTime and estWaitMinutes are not sourced from
-  // PatientModel yet — they're placeholder values (DateTime.now() / 0).
-  List<QueuePatient> get waitingPatients {
-    return AppdataStore().patient
-        .where((p) => p.doctor == widget.doctorName && p.status == "Waiting")
-        .map(
-          (p) => QueuePatient(
-            token: p.token,
-            patientName: p.name,
-            phoneNumber: p.phoneNumber,
-            registrationTime: DateTime.now(),
-            doctorName: widget.doctorName,
-            department: widget.department,
-            status: p.status,
-            estWaitMinutes: 0,
-          ),
-        )
-        .toList();
+  // Firestore id of this doctor (queue entries store it as doctorId).
+  String? get _doctorId => doctor?.id;
+
+  // Red snackbar: the action itself failed.
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
   }
 
-  // All patients this doctor has finished seeing, mapped the same way
-  // as waitingPatients.
-  List<QueuePatient> get completedPatients {
-    return AppdataStore().patient
-        .where((p) => p.doctor == widget.doctorName && p.status == "Completed")
-        .map(
-          (p) => QueuePatient(
-            token: p.token,
-            patientName: p.name,
-            phoneNumber: p.phoneNumber,
-            registrationTime: DateTime.now(),
-            doctorName: widget.doctorName,
-            department: widget.department,
-            status: p.status,
-            estWaitMinutes: 0,
-          ),
-        )
-        .toList();
+  // Orange snackbar: the action worked, but the patient could not be
+  // notified (for example the patient deleted the app).
+  void _showWarn(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.orange.shade800,
+          duration: const Duration(seconds: 6),
+        ),
+      );
   }
+
+  // Green snackbar: an action worked.
+  void _showInfo(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: const Color(0xFF2E7D32),
+        ),
+      );
+  }
+
+  // A readable message for the admin. For unexpected errors the error code
+  // is added in brackets, so a problem is easy to find.
+  String _errorText(Object e) {
+    final friendly = QueueAdminService.friendlyError(e);
+    if (e is StateError) return friendly;
+    if (e is FirebaseException &&
+        (e.code == 'permission-denied' ||
+            e.code == 'unavailable' ||
+            e.code == 'network-request-failed' ||
+            e.code == 'deadline-exceeded')) {
+      return friendly;
+    }
+    debugPrint('Admin action failed: $e');
+    return '$friendly (${e is FirebaseException ? e.code : e.runtimeType})';
+  }
+
+  // Entries with the given status, ordered by seq (joining order).
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _docsWithStatus(
+    String status,
+  ) {
+    return _docs
+        .where(
+          (d) =>
+              QueueAdminService.normalizeStatus(
+                d.data()['status']?.toString(),
+              ) ==
+              status,
+        )
+        .toList()
+      ..sort(
+        (a, b) =>
+            QueueAdminService.seqOf(a).compareTo(QueueAdminService.seqOf(b)),
+      );
+  }
+
+  // Maps a Firestore queue entry into the QueuePatient view model.
+  // Note: estWaitMinutes is not calculated yet (always 0).
+  QueuePatient _toQueuePatient(QueryDocumentSnapshot<Map<String, dynamic>> d) {
+    final data = d.data();
+    final joinedAt = data['joinedAt'];
+    return QueuePatient(
+      token: data['token']?.toString() ?? '--',
+      patientName: data['patientName']?.toString() ?? '',
+      phoneNumber: data['phone']?.toString() ?? '',
+      registrationTime: joinedAt is Timestamp
+          ? joinedAt.toDate()
+          : DateTime.now(),
+      doctorName: widget.doctorName,
+      department: widget.department,
+      status: QueueAdminService.normalizeStatus(data['status']?.toString()),
+      estWaitMinutes: 0,
+    );
+  }
+
+  // Firestore document id of the entry with this token (tokens are unique
+  // per doctor per day).
+  String? _entryIdForToken(String token) {
+    for (final d in _docs) {
+      if (d.data()['token']?.toString() == token) return d.id;
+    }
+    return null;
+  }
+
+  // All patients currently waiting for this doctor.
+  List<QueuePatient> get waitingPatients =>
+      _docsWithStatus('Waiting').map(_toQueuePatient).toList();
+
+  // All patients this doctor has finished seeing.
+  List<QueuePatient> get completedPatients =>
+      _docsWithStatus('Completed').map(_toQueuePatient).toList();
 
   // The list currently shown in the right-hand panel, based on the active tab.
   List<QueuePatient> get _activeList =>
@@ -108,24 +222,11 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
 
   // The doctor's patient currently "In Consultation", if any.
   QueuePatient? get currentPatient {
-    final list = AppdataStore().patient.where(
-      (p) => p.doctor == widget.doctorName && p.status == "In Consultation",
-    );
+    final list = _docsWithStatus('In Consultation');
     if (list.isEmpty) return null;
-    final p = list.first;
-    return QueuePatient(
-      token: p.token,
-      patientName: p.name,
-      phoneNumber: p.phoneNumber,
-      registrationTime: DateTime.now(),
-      doctorName: widget.doctorName,
-      department: widget.department,
-      status: p.status,
-      estWaitMinutes: 0,
-    );
+    return _toQueuePatient(list.first);
   }
 
-  
   QueuePatient? get _selectedPatient {
     if (_hasManualSelection &&
         _activeList.isNotEmpty &&
@@ -158,7 +259,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                 Expanded(
                   child: Text(
                     widget.doctorName,
-                    overflow: TextOverflow.ellipsis, 
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -170,37 +271,53 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
           ),
 
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final bool isMobile = constraints.maxWidth < 700; 
+            child: !_loaded
+                ? const Center(child: CircularProgressIndicator())
+                : _loadError != null
+                    ? Center(
+                        child: Text(
+                          _loadError!,
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      )
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          final bool isMobile = constraints.maxWidth < 700;
 
-                if (isMobile) return _buildMobileLayout(); 
+                          if (isMobile) return _buildMobileLayout();
 
-                // Original three-column layout: doctor panel | patient details | queue list
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(width: 260, child: _buildDoctorPanel()),
-                    Container(width: 1, color: Colors.grey.shade300),
+                          // Original three-column layout:
+                          // doctor panel | patient details | queue list
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              SizedBox(width: 260, child: _buildDoctorPanel()),
+                              Container(width: 1, color: Colors.grey.shade300),
 
-                    Expanded(child: _buildPatientDetailsPanel(isMobile: false)),
-                    Container(width: 1, color: Colors.grey.shade300),
+                              Expanded(
+                                child: _buildPatientDetailsPanel(
+                                  isMobile: false,
+                                ),
+                              ),
+                              Container(width: 1, color: Colors.grey.shade300),
 
-                    SizedBox(
-                      width: 340,
-                      child: _buildQueueListPanel(isMobile: false),
-                    ),
-                  ],
-                );
-              },
-            ),
+                              SizedBox(
+                                width: 340,
+                                child: _buildQueueListPanel(isMobile: false),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
           ),
         ],
       ),
     );
   }
 
- 
   Widget _buildMobileLayout() {
     return Column(
       children: [
@@ -217,7 +334,6 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
-  
   Widget _buildMobileDoctorStrip() {
     return Container(
       color: Colors.white,
@@ -337,7 +453,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                 ),
               ),
 
-              Spacer(),
+              const Spacer(),
 
               Row(
                 children: [
@@ -418,6 +534,8 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   // Desktop: sits in the fixed 340px right column. Mobile: fills the
   // whole screen when the "Queue" toggle is active.
   Widget _buildQueueListPanel({required bool isMobile}) {
+    final activeList = _activeList;
+
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -432,7 +550,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
           ),
           const Divider(height: 24),
           Expanded(
-            child: _activeList.isEmpty
+            child: activeList.isEmpty
                 ? Center(
                     child: Text(
                       "No patients here",
@@ -443,9 +561,9 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                     ),
                   )
                 : ListView.builder(
-                    itemCount: _activeList.length,
+                    itemCount: activeList.length,
                     itemBuilder: (context, index) {
-                      final patient = _activeList[index];
+                      final patient = activeList[index];
                       final isSelected =
                           _hasManualSelection && index == selectedPatientIndex;
 
@@ -455,7 +573,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                           _hasManualSelection = true;
                           // On mobile, jump straight to the Details panel
                           // once a patient is picked from the list.
-                          if (isMobile) _mobilePanelIndex = 1; // NEW
+                          if (isMobile) _mobilePanelIndex = 1;
                         }),
                         child: Container(
                           margin: const EdgeInsets.only(bottom: 10),
@@ -539,12 +657,34 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     }
 
     final bool isCompleted = patient.status == "Completed";
-    final bool doctorHasCurrent = _controller.hasCurrentPatient(
-      widget.doctorName,
-    );
-    final bool doctorHasWaiting = _controller.hasWaitingPatient(
-      widget.doctorName,
-    );
+    final bool isWaiting = patient.status == "Waiting";
+    final bool doctorHasCurrent = currentPatient != null;
+
+    // Skip swaps places with the patient behind, so the last waiting
+    // patient cannot be skipped.
+    final bool isLastWaiting = isWaiting &&
+        waitingPatients.isNotEmpty &&
+        waitingPatients.last.token == patient.token;
+
+    // Call: any waiting patient, but only when nobody is with the doctor.
+    final bool canCall = isWaiting && !doctorHasCurrent;
+    final bool canSkip = isWaiting && !isLastWaiting;
+
+    // Short explanations for buttons that are greyed out.
+    final List<String> hints = [];
+    if (!isCompleted && !isWaiting) {
+      hints.add(
+        "To call or skip a patient, select a waiting patient from the queue list first.",
+      );
+    }
+    if (isWaiting && doctorHasCurrent) {
+      hints.add("Complete the current patient before calling another one.");
+    }
+    if (isLastWaiting) {
+      hints.add(
+        "Skip is not available because this patient is last in the queue.",
+      );
+    }
 
     final fieldsSection = isMobile
         ? Column(
@@ -688,15 +828,15 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                 label: "Call Patient",
                 bgColor: AppColors.primaryPurple,
                 textColor: Colors.white,
-                enabled: !isCompleted && !doctorHasCurrent && doctorHasWaiting,
+                enabled: canCall,
                 isLoading: _isCallingNext,
-                onTap: _handleCallNext,
+                onTap: _handleCallPatient,
               ),
               _ActionButton(
                 label: "Skip",
                 bgColor: Colors.blueGrey.shade400,
                 textColor: Colors.white,
-                enabled: !isCompleted && patient.status == "Waiting",
+                enabled: canSkip,
                 isLoading: _isSkipping,
                 onTap: _handleSkip,
               ),
@@ -710,6 +850,15 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
               ),
             ],
           ),
+
+          // Explains why a button is greyed out.
+          for (final hint in hints) ...[
+            const SizedBox(height: 12),
+            Text(
+              hint,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            ),
+          ],
         ],
       ),
     );
@@ -749,7 +898,6 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
- 
   Widget _buildDropdownField(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -782,7 +930,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                 "Completed",
               ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
               onChanged: (v) {
-                // Not implemented: wire this to a controller method
+                // Not implemented: wire this to a service method
                 // to persist a manual status change.
               },
             ),
@@ -792,54 +940,165 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
-  // Marks the doctor's current patient as done, then resets the
-  // detail panel back to its default selection.
+  // Runs one admin action against Firestore. Shows the button spinner while
+  // it runs, and a snackbar if it fails (network, permission, queue changed).
+  // Returns true when the action succeeded, false otherwise.
+  Future<bool> _perform({
+    required void Function(bool loading) setLoading,
+    required Future<void> Function(String doctorId) action,
+    bool resetSelection = false,
+  }) async {
+    final id = _doctorId;
+    if (id == null) {
+      _showSnack("Doctor not found.");
+      return false;
+    }
+
+    setState(() => setLoading(true));
+    try {
+      await action(id);
+      if (mounted && resetSelection) {
+        setState(() {
+          selectedPatientIndex = 0;
+          _hasManualSelection = false;
+        });
+      }
+      return true;
+    } catch (e) {
+      _showSnack(_errorText(e));
+      return false;
+    } finally {
+      if (mounted) setState(() => setLoading(false));
+    }
+  }
+
+  // Marks the doctor's current patient as done, resets the detail panel,
+  // then tells the patient their visit is complete.
   Future<void> _handleComplete() async {
-    setState(() => _isCompleting = true);
-    await Future.delayed(const Duration(milliseconds: 250));
-    _controller.finishServing(widget.doctorName);
-    if (!mounted) return;
-    setState(() {
-      _isCompleting = false;
-      selectedPatientIndex = 0;
-      _hasManualSelection = false;
-    });
+    // Remember who is being served BEFORE completing, because after
+    // completing nobody is "In Consultation" any more.
+    final inConsultation = _docsWithStatus('In Consultation');
+    final entryId = inConsultation.isEmpty ? null : inConsultation.first.id;
+
+    final ok = await _perform(
+      setLoading: (v) => _isCompleting = v,
+      action: (id) => _service.completeCurrent(id),
+      resetSelection: true,
+    );
+
+    if (ok && entryId != null) {
+      final note = await notifyPatient(entryId, 'completed');
+      if (note != null) _showWarn(note);
+    }
   }
 
-  // Calls the next waiting patient in for this doctor.
-  Future<void> _handleCallNext() async {
-    setState(() => _isCallingNext = true);
-    await Future.delayed(const Duration(milliseconds: 250));
-    _controller.callNextPatient(widget.doctorName);
-    if (!mounted) return;
-    setState(() => _isCallingNext = false);
+  // Calls the SELECTED waiting patient in (any waiting patient, not only the
+  // next one in line), then sends them a push notification.
+  Future<void> _handleCallPatient() async {
+    final patient = _selectedPatient;
+    if (patient == null || patient.status != "Waiting") return;
+    final entryId = _entryIdForToken(patient.token);
+    if (entryId == null) return;
+
+    final ok = await _perform(
+      setLoading: (v) => _isCallingNext = v,
+      action: (id) => _service.callSpecific(id, entryId),
+      resetSelection: true,
+    );
+    if (!ok) return;
+
+    final note = await notifyPatient(entryId, 'called');
+    if (note != null) _showWarn(note);
   }
 
-  // Moves the selected patient one position down in the waiting queue.
+  // Moves the selected waiting patient one place down the queue, keeps the
+  // highlight on that patient, confirms to the admin, and notifies the patient.
   Future<void> _handleSkip() async {
     final patient = _selectedPatient;
     if (patient == null) return;
-    setState(() => _isSkipping = true);
-    await Future.delayed(const Duration(milliseconds: 250));
-    _controller.moveDownOnePosition(patient.token);
-    if (!mounted) return;
-    setState(() => _isSkipping = false);
+    final entryId = _entryIdForToken(patient.token);
+    if (entryId == null) return;
+
+    // Row of this patient in the waiting list before skipping.
+    final oldIndex = waitingPatients.indexWhere((p) => p.token == patient.token);
+
+    final ok = await _perform(
+      setLoading: (v) => _isSkipping = v,
+      action: (id) => _service.skip(id, entryId),
+    );
+    if (!ok || !mounted) return;
+
+    // The patient moved one row down, so move the highlight with them.
+    if (oldIndex != -1) {
+      setState(() {
+        selectedTabIndex = 0;
+        selectedPatientIndex = oldIndex + 1;
+        _hasManualSelection = true;
+      });
+    }
+    _showInfo('Token ${patient.token} moved down one place.');
+
+    final note = await notifyPatient(entryId, 'skipped');
+    if (note != null) _showWarn(note);
   }
 
-  // Cancels the selected patient's queue entry, then resets the
-  // detail panel back to its default selection.
+  // Asks for confirmation, then removes the selected patient from the queue,
+  // resets the detail panel and tells the patient their token was cancelled.
   Future<void> _handleCancel() async {
     final patient = _selectedPatient;
     if (patient == null) return;
-    setState(() => _isCancelling = true);
-    await Future.delayed(const Duration(milliseconds: 250));
-    _controller.cancelPatient(patient.token);
-    if (!mounted) return;
-    setState(() {
-      _isCancelling = false;
-      selectedPatientIndex = 0;
-      _hasManualSelection = false;
-    });
+    final entryId = _entryIdForToken(patient.token);
+    if (entryId == null) return;
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("Cancel Token"),
+        content: Text(
+          "Cancel token ${patient.token} for ${patient.patientName}? "
+          "They will be removed from the queue and notified. "
+          "This cannot be undone.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text("Keep Token"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text("Cancel Token"),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // Remember who this patient is BEFORE deleting, because after deleting
+    // the queue entry no longer exists.
+    String? patientId;
+    for (final d in _docs) {
+      if (d.id == entryId) {
+        patientId = d.data()['patientId']?.toString();
+        break;
+      }
+    }
+
+    final ok = await _perform(
+      setLoading: (v) => _isCancelling = v,
+      action: (id) => _service.cancel(entryId),
+      resetSelection: true,
+    );
+
+    if (ok && patientId != null) {
+      final note = await notifyPatient(
+        entryId,
+        'cancelled',
+        patientId: patientId,
+        token: patient.token,
+      );
+      if (note != null) _showWarn(note);
+    }
   }
 }
 

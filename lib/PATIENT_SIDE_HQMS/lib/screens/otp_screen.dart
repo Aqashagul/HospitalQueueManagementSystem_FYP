@@ -1,20 +1,30 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
+import 'package:queue_management_system/notification_service.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/step_progress_indicator.dart';
 import 'verification_success_screen.dart';
 
+
 class OtpScreen extends StatefulWidget {
-  final String phoneNumber;
+  final String phoneNumber; // full number, e.g. +923001234567
   final String userName;
+  final String verificationId;
+  final int? resendToken;
+  final String queueId;
 
   const OtpScreen({
     super.key,
     required this.phoneNumber,
     required this.userName,
+    required this.verificationId,
+    required this.resendToken,
+    required this.queueId,
   });
 
   @override
@@ -23,15 +33,23 @@ class OtpScreen extends StatefulWidget {
 
 class _OtpScreenState extends State<OtpScreen> {
   final TextEditingController _otpController = TextEditingController();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
   Timer? _timer;
   int _secondsLeft = 30;
   bool _canResend = false;
   bool _isVerifying = false;
+  bool _isResending = false;
   String? _errorText;
+
+  late String _verificationId;
+  int? _resendToken;
 
   @override
   void initState() {
     super.initState();
+    _verificationId = widget.verificationId;
+    _resendToken = widget.resendToken;
     _startResendTimer();
   }
 
@@ -42,6 +60,10 @@ class _OtpScreenState extends State<OtpScreen> {
     });
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_secondsLeft == 0) {
         timer.cancel();
         setState(() => _canResend = true);
@@ -51,21 +73,60 @@ class _OtpScreenState extends State<OtpScreen> {
     });
   }
 
-  Future<void> _resendOtp() async {
-    _otpController.clear();
-    setState(() => _errorText = null);
-    _startResendTimer();
+  void _showSnack(String message, {bool error = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('OTP resent successfully'),
-        backgroundColor: AppColors.primary,
+        content: Text(message),
+        backgroundColor: error ? AppColors.error : AppColors.primary,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
+  Future<void> _resendOtp() async {
+    if (_isResending) return;
+    _isResending = true;
+
+    _otpController.clear();
+    setState(() => _errorText = null);
+    _startResendTimer();
+
+    try {
+      await _auth.verifyPhoneNumber(
+        phoneNumber: widget.phoneNumber,
+        forceResendingToken: _resendToken,
+        timeout: const Duration(seconds: 60),
+        verificationCompleted: (_) {},
+        verificationFailed: (e) {
+          if (!mounted) return;
+          _timer?.cancel();
+          setState(() {
+            _canResend = true;
+            _errorText = e.code == 'too-many-requests'
+                ? 'Bohat zyada koshishen ho gayin, thori der baad try karein'
+                : (e.message ?? 'OTP resend nahi ho saka');
+          });
+        },
+        codeSent: (id, token) {
+          _verificationId = id;
+          _resendToken = token;
+          _showSnack('OTP resent successfully');
+        },
+        codeAutoRetrievalTimeout: (id) => _verificationId = id,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _errorText = 'OTP resend nahi ho saka');
+    } finally {
+      _isResending = false;
+    }
+  }
+
   Future<void> _verifyOtp() async {
+    if (_isVerifying) return; // onCompleted + button se double call na ho
+
     if (_otpController.text.length != 6) {
       setState(() => _errorText = 'Please enter the full 6-digit code');
       return;
@@ -76,16 +137,73 @@ class _OtpScreenState extends State<OtpScreen> {
       _errorText = null;
     });
 
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId,
+        smsCode: _otpController.text.trim(),
+      );
 
-    if (!mounted) return;
-    setState(() => _isVerifying = false);
+      final result = await _auth.signInWithCredential(credential);
+      final user = result.user!;
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => VerificationSuccessScreen(userName: widget.userName),
-      ),
-    );
+      await user.updateDisplayName(widget.userName);
+
+      final db = FirebaseFirestore.instance;
+
+      // Patient profile (sirf pehli dafa banta hai)
+      final userRef = db.collection('users').doc(user.uid);
+      final userDoc = await userRef.get();
+      if (!userDoc.exists) {
+        await userRef.set({
+          'name': widget.userName,
+          'phone': user.phoneNumber,
+          'role': 'patient',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+        try {
+        await NotificationService.saveToken();
+      }  catch (e) {
+  debugPrint('saveToken failed: $e');
+}
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => VerificationSuccessScreen(userName: widget.userName),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+     setState(() {
+  switch (e.code) {
+    case 'invalid-verification-code':
+      _errorText = 'Invalid OTP. Please try again.';
+      break;
+    case 'session-expired':
+      _errorText = 'OTP has expired. Please request a new one.';
+      break;
+    case 'too-many-requests':
+      _errorText = 'Too many attempts. Please try again later.';
+      break;
+    case 'network-request-failed':
+      _errorText = 'Please check your internet connection.';
+      break;
+    default:
+      _errorText = e.message ?? 'Verification failed. Please try again.';
+  }
+});
+    } on FirebaseException catch (e) {
+      // Firestore error (rules / network)
+      if (!mounted) return;
+      setState(() => _errorText = 'Data save nahi hua: ${e.message ?? e.code}');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _errorText = 'Kuch masla aa gaya, dobara try karein');
+    } finally {
+      if (mounted) setState(() => _isVerifying = false);
+    }
   }
 
   @override
@@ -240,8 +358,9 @@ class _OtpScreenState extends State<OtpScreen> {
                           ),
                           enableActiveFill: true,
                           onChanged: (value) {
-                            if (_errorText != null)
+                            if (_errorText != null) {
                               setState(() => _errorText = null);
+                            }
                           },
                           onCompleted: (value) => _verifyOtp(),
                         ),
@@ -249,6 +368,7 @@ class _OtpScreenState extends State<OtpScreen> {
                           const SizedBox(height: 12),
                           Text(
                             _errorText!,
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: AppColors.error,
                               fontSize: 12.5,

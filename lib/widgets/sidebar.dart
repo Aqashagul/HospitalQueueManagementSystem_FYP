@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:queue_management_system/BACKEND/auth_service.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/data/nav_items_data.dart';
 import 'package:queue_management_system/models/nav_items_model.dart';
-import 'package:queue_management_system/screens/auth/login_page.dart';
 import 'package:queue_management_system/widgets/sidebar_glyph_icon.dart';
 import 'package:queue_management_system/widgets/sidebar_item.dart';
 import 'package:queue_management_system/widgets/top_appbar.dart';
+
 
 class Sidebar extends StatefulWidget {
   final int selectedIndex;
@@ -35,23 +36,24 @@ class _SidebarState extends State<Sidebar> {
 
   static const double _autoCollapseBreakpoint = 900;
 
+  // Shows a confirmation dialog, then signs the admin out of Firebase.
+  // The StreamBuilder in main.dart switches to the login screen automatically.
   void _handleLogout(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text("Logout"),
         content: const Text("Do you want to Logout?"),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text("Cancel"),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-              );
+            onPressed: () async {
+              // Close the dialog first, then sign out.
+              Navigator.pop(dialogContext);
+              await AuthService().signOut();
             },
             child: const Text("Logout"),
           ),

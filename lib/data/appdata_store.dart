@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/models/department_model.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
@@ -11,205 +13,183 @@ class AppdataStore extends ChangeNotifier {
   static final AppdataStore _instance = AppdataStore._internal();
   factory AppdataStore() => _instance; //returns the existing
 
-  //Department List
-  final List<Department> departments = [
-    Department(
-      name: "Cardiology",
-      head: "Dr.Sana",
-      assignedDoctors: 3,
-      status: "Active",
-      createdDate: "July, 29, 2026",
-    ),
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-    Department(
-      name: "General Medicine",
-      head: "Dr.Ayaz",
-      assignedDoctors: 6,
-      status: "Active",
-      createdDate: "Aug, 1, 2026",
-    ),
+  // Live Firestore connections (one per collection).
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _departmentsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _doctorsSub;
 
-    Department(
-      name: "Dermatology",
-      head: "Dr.Imran",
-      assignedDoctors: 3,
-      status: "Active",
-      createdDate: "Aug, 1, 2026",
-    ),
-  ];
+  // -------------------------------------------------------------------------
+  // Start / stop listening to Firestore
+  // -------------------------------------------------------------------------
 
-  void addDepartment(Department dept) {
-    departments.add(dept);
+  // Sorts Firestore documents newest-first using their 'createdAt' field.
+  // - createdAt still pending (just written): treated as newest.
+  // - createdAt missing (old documents): treated as oldest.
+  int _newestFirst(
+    QueryDocumentSnapshot<Map<String, dynamic>> a,
+    QueryDocumentSnapshot<Map<String, dynamic>> b,
+  ) {
+    DateTime timeOf(Map<String, dynamic> data) {
+      if (!data.containsKey('createdAt')) {
+        return DateTime.fromMillisecondsSinceEpoch(0);
+      }
+      final value = data['createdAt'];
+      return value is Timestamp ? value.toDate() : DateTime.now();
+    }
+
+    return timeOf(b.data()).compareTo(timeOf(a.data()));
+  }
+  /// Starts listening to Firestore. Call once after the admin logs in.
+  void startListening() {
+    _departmentsSub ??= _db.collection('departments').snapshots().listen(
+      (snapshot) {
+        final docs = snapshot.docs.toList()..sort(_newestFirst);
+        departments
+          ..clear()
+          ..addAll(docs.map((doc) {
+            final data = doc.data();
+            return Department.fromMap(
+              doc.id,
+              data,
+              assignedDoctors:
+                  doctors.where((d) => d.department == data['name']).length,
+            );
+          }));
+        notifyListeners();
+      },
+      onError: (e) => debugPrint('Departments listener error: $e'),
+    );
+
+    _doctorsSub ??= _db.collection('doctors').snapshots().listen(
+      (snapshot) {
+        final docs = snapshot.docs.toList()..sort(_newestFirst);
+        doctors
+          ..clear()
+          ..addAll(docs.map((doc) {
+            final data = doc.data();
+            return DoctorModel.fromMap(
+              doc.id,
+              data,
+              patientsCount:
+                  patient.where((p) => p.doctor == data['name']).length,
+            );
+          }));
+        notifyListeners();
+      },
+      onError: (e) => debugPrint('Doctors listener error: $e'),
+    );
   }
 
-  void removeDepartment(Department dept) {
-    departments.remove(dept);
+  /// Stops listening and clears local data. Call on logout.
+  Future<void> stopListening() async {
+    await _departmentsSub?.cancel();
+    _departmentsSub = null;
+    departments.clear();
+
+    await _doctorsSub?.cancel();
+    _doctorsSub = null;
+    doctors.clear();
   }
 
-  final List<DoctorModel> doctors = [
-    DoctorModel(
-      name: "Dr.Sana",
-      specialization: "Cardiologist",
-      department: "Cardiology",
-      patientsCount: 3,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_sana.jpg",
-      experience: "12 Years",
-      workingHours: "9:00 AM - 5:00 PM",
-      qualification: "MBBS, FCPS (Cardiology)",
-      tokenPrefix: "A",
-      fee: 2500
-    ),
+  // -------------------------------------------------------------------------
+  // Departments
+  // -------------------------------------------------------------------------
 
-DoctorModel(
-      name: "Dr.Amna Siddiqui",
-      specialization: "Internal Medicine",
-      department: "General Medicine",
-      patientsCount: 7,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_amna.jpg",
-      experience: "6 Years",
-      workingHours: "10:00 AM - 6:00 PM",
-      qualification: "MBBS, MD",
-      tokenPrefix: "F",
-        fee: 1500
-    ),
+  // Filled automatically from Firestore (see startListening).
+  final List<Department> departments = [];
 
-    DoctorModel(
-      name: "Dr.Sarah",
-      specialization: "Cardiac Surgeon",
-      department: "Cardiology",
-      patientsCount: 2,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_sarah.jpg",
-      experience: "10 Years",
-      workingHours: "10:00 AM - 6:00 PM",
-      qualification: "MBBS, FRCS",
-      tokenPrefix: "D",
-        fee: 2000
-    ),
-    DoctorModel(
-      name: "Dr.Hamza",
-      specialization: "Cardiologist",
-      department: "Cardiology",
-      patientsCount: 1,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_hamza.jpg",
-      experience: "8 Years",
-      workingHours: "8:00 AM - 4:00 PM",
-      qualification: "MBBS, FCPS",
-      tokenPrefix: "C",
-        fee: 1000
-    ),
-   
-    DoctorModel(
-      name: "Dr.Hashim",
-      specialization: "General Physician",
-      department: "General Medicine",
-      patientsCount: 3,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_hashim.jpg",
-      experience: "10 Years",
-      workingHours: "9:00 AM - 5:00 PM",
-      qualification: "MBBS, FCPS",
-      tokenPrefix: "B",
-        fee: 2000
-    ),
-    DoctorModel(
-      name: "Dr.hoorain",
-      specialization: "Medicine",
-      department: "General Medicine", 
-      patientsCount: 5,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_hoorain.jpg",
-      experience: "15 Years",
-      workingHours: "8:00 AM - 4:00 PM",
-      qualification: "MBBS, MD",
-      tokenPrefix: "E",
-        fee: 1200
-    ),
+    Future<void> addDepartment(Department dept) {
+    return _db.collection('departments').add({
+      ...dept.toMap(),
+      // Server time, used to show the newest department first.
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
 
-    DoctorModel(
-      name: "Dr.Areeba",
-      specialization: "Cosmetics",
-      department: "Dermatology", // FIXED
-      patientsCount: 0,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_areba.jpg",
-      experience: "4 Years",
-      workingHours: "1:00 PM - 9:00 PM",
-      qualification: "MBBS, MD (Derma)",
-      tokenPrefix: "J",
-        fee: 1300
-    ),
-    
-    DoctorModel(
-      name: "Dr.Fatima Noor",
-      specialization: "Family Medicine",
-      department: "General Medicine",
-      patientsCount: 1,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_fatima.jpg",
-      experience: "8 Years",
-      workingHours: "10:00 AM - 5:00 PM",
-      qualification: "MBBS, DCH",
-      tokenPrefix: "G",
-        fee: 500
-    ),
-    DoctorModel(
-      name: "Dr.Usman Tariq",
-      specialization: "General Physician",
-      department: "General Medicine",
-      patientsCount: 0,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_usman.jpg",
-      experience: "9 Years",
-      workingHours: "11:00 AM - 7:00 PM",
-      qualification: "MBBS, FCPS",
-      tokenPrefix: "H",
-        fee: 500
-    ),
-    DoctorModel(
-      name: "Dr.Zainab Hussain",
-      specialization: "Dermatologist",
-      department: "Dermatology", // FIXED (pehle "Dermatologist")
-      patientsCount: 3,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_zainab.jpg",
-      experience: "5 Years",
-      workingHours: "12:00 PM - 8:00 PM",
-      qualification: "MBBS, DDVL",
-      tokenPrefix: "I",
-        fee: 700
-    ),
-   
-    DoctorModel(
-      name: "Dr.Imran",
-      specialization: "Dermatologist",
-      department: "Dermatology", // FIXED
-      patientsCount: 0,
-      status: "Available",
-      photoAssetPath: "assets/images/Dr_imran.jpg",
-      experience: "10 Years",
-      workingHours: "9:00 AM - 5:00 PM",
-      qualification: "MBBS, DDVL",
-      tokenPrefix: "K",
-        fee: 1000
-    ),
-     DoctorModel(
-      name: "Dr.Rubina",
-      specialization: "General Physician",
-      department: "General Medicine",
-      patientsCount: 0,
-      status: "Unavailable",
-      photoAssetPath: "assets/images/Dr_rubab.jpg",
-      experience: "6 Years",
-      workingHours: "11:00 AM - 7:00 PM",
-      qualification: "MBBS",
-      tokenPrefix: "R",
-        fee: 800
-    ),
-  ];
+  Future<void> updateDepartment(Department dept) async {
+    if (dept.id == null) return;
+    await _db.collection('departments').doc(dept.id).update(dept.toMap());
+  }
+
+  Future<void> removeDepartment(Department dept) async {
+    if (dept.id == null) return;
+    await _db.collection('departments').doc(dept.id).delete();
+  }
+
+    /// Deletes a department together with every doctor that belongs to it,
+  /// in one batch (all succeed or none do).
+  Future<void> removeDepartmentWithDoctors(Department dept) async {
+    if (dept.id == null) return;
+
+    final doctorsSnap = await _db
+        .collection('doctors')
+        .where('department', isEqualTo: dept.name)
+        .get();
+
+    final batch = _db.batch();
+    for (final doc in doctorsSnap.docs) {
+      batch.delete(doc.reference);
+    }
+    batch.delete(_db.collection('departments').doc(dept.id));
+    await batch.commit();
+  }
+
+  // -------------------------------------------------------------------------
+  // Doctors
+  // -------------------------------------------------------------------------
+
+  // Filled automatically from Firestore (see startListening).
+  final List<DoctorModel> doctors = [];
+
+  Future<void> addDoctor(DoctorModel doctor) {
+    return _db.collection('doctors').add({
+      ...doctor.toMap(),
+      // Server time, used to show the newest doctor first.
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> updateDoctor(DoctorModel doctor) async {
+    if (doctor.id == null) return;
+    await _db.collection('doctors').doc(doctor.id).update(doctor.toMap());
+  }
+
+  Future<void> removeDoctor(DoctorModel doctor) async {
+    if (doctor.id == null) return;
+    await _db.collection('doctors').doc(doctor.id).delete();
+  }
+
+  /// TEMPORARY: uploads the old dummy doctors once, only if the
+  /// collection is empty. Delete this method after the first run.
+  Future<void> seedDoctorsIfEmpty() async {
+    final existing = await _db.collection('doctors').limit(1).get();
+    if (existing.docs.isNotEmpty) return;
+
+    const seed = [
+      DoctorModel(name: "Dr.Sana", specialization: "Cardiologist", department: "Cardiology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_sana.jpg", experience: "12 Years", workingHours: "9:00 AM - 5:00 PM", qualification: "MBBS, FCPS (Cardiology)", tokenPrefix: "A", fee: 2500),
+      DoctorModel(name: "Dr.Amna Siddiqui", specialization: "Internal Medicine", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_amna.jpg", experience: "6 Years", workingHours: "10:00 AM - 6:00 PM", qualification: "MBBS, MD", tokenPrefix: "F", fee: 1500),
+      DoctorModel(name: "Dr.Sarah", specialization: "Cardiac Surgeon", department: "Cardiology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_sarah.jpg", experience: "10 Years", workingHours: "10:00 AM - 6:00 PM", qualification: "MBBS, FRCS", tokenPrefix: "D", fee: 2000),
+      DoctorModel(name: "Dr.Hamza", specialization: "Cardiologist", department: "Cardiology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_hamza.jpg", experience: "8 Years", workingHours: "8:00 AM - 4:00 PM", qualification: "MBBS, FCPS", tokenPrefix: "C", fee: 1000),
+      DoctorModel(name: "Dr.Hashim", specialization: "General Physician", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_hashim.jpg", experience: "10 Years", workingHours: "9:00 AM - 5:00 PM", qualification: "MBBS, FCPS", tokenPrefix: "B", fee: 2000),
+      DoctorModel(name: "Dr.Hoorain", specialization: "Medicine", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_hoorain.jpg", experience: "15 Years", workingHours: "8:00 AM - 4:00 PM", qualification: "MBBS, MD", tokenPrefix: "E", fee: 1200),
+      DoctorModel(name: "Dr.Areeba", specialization: "Cosmetics", department: "Dermatology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_areba.jpg", experience: "4 Years", workingHours: "1:00 PM - 9:00 PM", qualification: "MBBS, MD (Derma)", tokenPrefix: "J", fee: 1300),
+      DoctorModel(name: "Dr.Fatima Noor", specialization: "Family Medicine", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_fatima.jpg", experience: "8 Years", workingHours: "10:00 AM - 5:00 PM", qualification: "MBBS, DCH", tokenPrefix: "G", fee: 500),
+      DoctorModel(name: "Dr.Usman Tariq", specialization: "General Physician", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_usman.jpg", experience: "9 Years", workingHours: "11:00 AM - 7:00 PM", qualification: "MBBS, FCPS", tokenPrefix: "H", fee: 500),
+      DoctorModel(name: "Dr.Zainab Hussain", specialization: "Dermatologist", department: "Dermatology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_zainab.jpg", experience: "5 Years", workingHours: "12:00 PM - 8:00 PM", qualification: "MBBS, DDVL", tokenPrefix: "I", fee: 700),
+      DoctorModel(name: "Dr.Imran", specialization: "Dermatologist", department: "Dermatology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_imran.jpg", experience: "10 Years", workingHours: "9:00 AM - 5:00 PM", qualification: "MBBS, DDVL", tokenPrefix: "K", fee: 1000),
+      DoctorModel(name: "Dr.Rubina", specialization: "General Physician", department: "General Medicine", patientsCount: 0, status: "Unavailable", photoAssetPath: "assets/images/Dr_rubab.jpg", experience: "6 Years", workingHours: "11:00 AM - 7:00 PM", qualification: "MBBS", tokenPrefix: "R", fee: 800),
+    ];
+
+    final batch = _db.batch();
+    for (final d in seed) {
+      batch.set(_db.collection('doctors').doc(), d.toMap());
+    }
+    await batch.commit();
+  }
+
+  // ===== Everything below this line stays as it was =====
+  // (final List<PatientModel> patient = [ ... ] and the rest of the file)
 
   final List<PatientModel> patient = [
     // ---- Dr.Sana (3) ----

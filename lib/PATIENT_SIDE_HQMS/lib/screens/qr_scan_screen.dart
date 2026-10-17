@@ -1,5 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/department_list_screen.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
 import '../widgets/scan_frame.dart';
@@ -25,12 +27,19 @@ class _QRScanScreenState extends State<QRScanScreen> {
     if (code != null) _proceedToRegistration(code);
   }
 
+   // After a scan: patients who already verified their phone number go
+  // straight to the departments; new patients register first.
   void _proceedToRegistration(String queueId) {
     if (_hasScanned) return;
     setState(() => _hasScanned = true);
+
+    final bool alreadyVerified = FirebaseAuth.instance.currentUser != null;
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => RegistrationScreen(scannedQueueId: queueId),
+        builder: (_) => alreadyVerified
+            ? const DepartmentListScreen()
+            : RegistrationScreen(scannedQueueId: queueId),
       ),
     );
   }

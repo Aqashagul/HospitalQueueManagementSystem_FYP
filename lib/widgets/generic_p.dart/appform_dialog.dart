@@ -77,7 +77,7 @@ class _AppFormDialogState extends State<AppFormDialog> {
           final initialOptions = field.dependentOptions!(values);
           values[field.key] = initialOptions.isNotEmpty ? initialOptions.first : null;
         } else {
-          values[field.key] = field.options?.first;
+         values[field.key] = field.options?.firstOrNull;
         }
       } else if (field.type == FieldType.image) {
         // In edit mode, preload the existing photo if there is one.

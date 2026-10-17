@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
+import 'package:queue_management_system/BACKEND/auth_service.dart';
 import 'package:queue_management_system/core/app_color.dart';
-import 'package:queue_management_system/screens/layout/app_shell.dart';
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/rounded_card.dart';
+
 
 
 class LoginScreen extends StatefulWidget {
@@ -15,10 +16,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // Hardcoded credentials used for now instead of real authentication.
-  // Replace with an actual auth call (API/Firebase/etc.) later.
-  static const String _fakeEmail = "admin@gmail.com";
-  static const String _fakePassword = "admin123";
+// Handles all Firebase authentication calls.
+final AuthService _authService = AuthService();
 
   static const List<Color> _brandGradient = [
     Color(0xFFBCA8E8),
@@ -38,44 +37,41 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // Checks the entered email/password against the hardcoded fake
-  // credentials. Only navigates to AppShell if they match; otherwise
-  // shows an inline error message.
-  Future<void> _handleLogin() async {
-    final enteredEmail = emailController.text.trim();
-    final enteredPassword = passwordController.text.trim();
+// Signs in with Firebase Authentication. Navigates to AppShell on
+// success; otherwise shows an inline error message.
+Future<void> _handleLogin() async {
+  final enteredEmail = emailController.text.trim();
+  final enteredPassword = passwordController.text.trim();
 
-    // Check for empty fields first — no need to show a spinner for a
-    // simple validation error.
-    if (enteredEmail.isEmpty || enteredPassword.isEmpty) {
-      setState(() {
-        errorMessage = "Input fields cannot be empty";
-      });
-      return;
-    }
-
+  // Validate empty fields first, no spinner needed for this.
+  if (enteredEmail.isEmpty || enteredPassword.isEmpty) {
     setState(() {
-      isLoggingIn = true;
-      errorMessage = null;
+      errorMessage = "Input fields cannot be empty";
     });
-
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (!mounted) return;
-
-    if (enteredEmail == _fakeEmail && enteredPassword == _fakePassword) {
-      setState(() => isLoggingIn = false);
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const AppShell()),
-      );
-    } else {
-      setState(() {
-        isLoggingIn = false;
-        errorMessage = "Invalid email or password";
-      });
-    }
+    return;
   }
+
+  setState(() {
+    isLoggingIn = true;
+    errorMessage = null;
+  });
+
+  // Returns null on success, or an error message on failure.
+  final error = await _authService.signIn(enteredEmail, enteredPassword);
+
+  if (!mounted) return;
+
+    if (error == null) {
+    // Success: no manual navigation needed.
+    // The StreamBuilder in main.dart switches to AppShell automatically.
+    setState(() => isLoggingIn = false);
+  } else  {
+    setState(() {
+      isLoggingIn = false;
+      errorMessage = error;
+    });
+  }
+}
 
   @override
   Widget build(BuildContext context) {

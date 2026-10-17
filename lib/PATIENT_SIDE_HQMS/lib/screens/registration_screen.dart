@@ -1,14 +1,20 @@
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/otp_screen.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/qr_scan_screen.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/terms_conditions_screen.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/widgets/premium_text_field.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
-import '../widgets/premium_text_field.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/step_progress_indicator.dart';
-import 'package:flutter/services.dart';
-import 'qr_scan_screen.dart';
-import 'otp_screen.dart';
-import 'terms_conditions_screen.dart';
-import 'package:flutter/gestures.dart';
+
+
+
+
 
 class RegistrationScreen extends StatefulWidget {
   final String scannedQueueId;
@@ -31,24 +37,78 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     super.dispose();
   }
 
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  String _friendlyError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-phone-number':
+        return 'Phone number sahi nahi hai';
+      case 'too-many-requests':
+        return 'Bohat zyada koshishen ho gayin, thori der baad try karein';
+      case 'quota-exceeded':
+        return 'SMS limit khatam ho gayi, baad mein try karein';
+      case 'network-request-failed':
+        return 'Internet connection check karein';
+      case 'app-not-authorized':
+      case 'missing-client-identifier':
+        return 'App Firebase mein authorized nahi (SHA keys check karein)';
+      default:
+        return e.message ?? 'OTP send nahi ho saka';
+    }
+  }
+
   Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isSending) return;
 
     setState(() => _isSending = true);
 
-    await Future.delayed(const Duration(seconds: 1));
+    final phone = '+92${_phoneController.text.trim()}';
 
-    if (!mounted) return;
-    setState(() => _isSending = false);
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => OtpScreen(
-          phoneNumber: _phoneController.text.trim(),
-          userName: _nameController.text.trim(),
-        ),
-      ),
-    );
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phone,
+        timeout: const Duration(seconds: 60),
+        verificationCompleted: (credential) {
+          // Verification OTP screen par manually hogi.
+        },
+        verificationFailed: (e) {
+          if (!mounted) return;
+          setState(() => _isSending = false);
+          _showError(_friendlyError(e));
+        },
+        codeSent: (verificationId, resendToken) {
+          if (!mounted) return;
+          setState(() => _isSending = false);
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => OtpScreen(
+                phoneNumber: phone,
+                userName: _nameController.text.trim(),
+                verificationId: verificationId,
+                resendToken: resendToken,
+                queueId: widget.scannedQueueId,
+              ),
+            ),
+          );
+        },
+        codeAutoRetrievalTimeout: (_) {},
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSending = false);
+      _showError('Kuch masla aa gaya, dobara try karein');
+    }
   }
 
   @override
@@ -85,8 +145,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     const StepProgressIndicator(currentStep: 1),
                     const SizedBox(height: 28),
 
-                    Center(
-                      child: const Text(
+                    const Center(
+                      child: Text(
                         'Your Information',
                         style: TextStyle(
                           fontSize: 24,
@@ -95,12 +155,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 8),
 
                     Center(
                       child: Text(
                         'Please enter your details to receive a One-Time Password (OTP).',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13.5,
                           color: AppColors.textGrey,
@@ -170,8 +230,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                 ),
                                 child: Row(
                                   children: [
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(
                                         horizontal: 14,
                                       ),
                                       child: Text(
@@ -194,17 +254,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                         keyboardType: TextInputType.phone,
                                         inputFormatters: [
                                           FilteringTextInputFormatter
-                                              .digitsOnly, // Sirf numbers, letters block
+                                              .digitsOnly, // only digits
                                           LengthLimitingTextInputFormatter(
                                             10,
-                                          ), // Max 10 digits (after +92)
+                                          ), // max 10 digits (after +92)
                                         ],
                                         style: const TextStyle(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w600,
                                         ),
                                         decoration: const InputDecoration(
-                                          hintText: 'Enter your mobile number',
+                                          hintText: '3001234567',
                                           hintStyle: TextStyle(
                                             color: AppColors.textGrey,
                                             fontWeight: FontWeight.normal,
@@ -216,12 +276,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                           ),
                                         ),
                                         validator: (value) {
-                                          if (value == null ||
-                                              value.trim().isEmpty) {
+                                          final v = value?.trim() ?? '';
+                                          if (v.isEmpty) {
                                             return 'Please enter your phone number';
                                           }
-                                          if (value.trim().length < 10) {
+                                          if (v.length < 10) {
                                             return 'Enter a valid phone number';
+                                          }
+                                          if (!v.startsWith('3')) {
+                                            return 'Number 3 se shuru hona chahiye (e.g. 3001234567)';
                                           }
                                           return null;
                                         },
@@ -286,27 +349,37 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         : PremiumButton(label: 'Send OTP', onPressed: _sendOtp),
                     const SizedBox(height: 14),
 
-
                     Center(
-  child: RichText(
-    text: TextSpan(
-      style: TextStyle(fontSize: 12, color: AppColors.textGrey),
-      children: [
-        const TextSpan(text: 'By continuing, you agree to our '),
-        TextSpan(
-          text: 'Terms & Conditions',
-          style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TermsConditionsScreen()),
-              );
-            },
-        ),
-      ],
-    ),
-  ),
-),
+                      child: RichText(
+                        text: TextSpan(
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textGrey,
+                          ),
+                          children: [
+                            const TextSpan(
+                              text: 'By continuing, you agree to our ',
+                            ),
+                            TextSpan(
+                              text: 'Terms & Conditions',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              recognizer: TapGestureRecognizer()
+                                ..onTap = () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const TermsConditionsScreen(),
+                                    ),
+                                  );
+                                },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 20),
 
                     // Bottom security banner

@@ -1,20 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:queue_management_system/data/analytics_controller.dart';
 
+
+// >>> Make sure this import points to where you saved analytics_data.dart <<<
+import 'analytics_data.dart';
+
+// Tokens taken per hour (8 AM - 5 PM) in the selected period, live from
+// Firestore.
 class PeakHourChart extends StatelessWidget {
-  const PeakHourChart({super.key});
+  final QueueDocs docs;
+  const PeakHourChart({super.key, required this.docs});
 
   @override
   Widget build(BuildContext context) {
-   final data = AnalyticsController().getPeakHourData();
-final hours = data["hours"] as List<String>;
-final counts = data["counts"] as List<double>;
+    final data = AnalyticsData.peakHourData(docs);
+    final hours = data["hours"] as List<String>;
+    final counts = data["counts"] as List<double>;
+
+    // Keep the chart readable even when every hour is 0.
+    final double highest = counts.fold<double>(0, (m, v) => v > m ? v : m);
+    final double maxY = highest < 4 ? 4 : highest + 1;
 
     return SizedBox(
       height: 240,
       child: BarChart(
         BarChartData(
+          minY: 0,
+          maxY: maxY,
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
@@ -23,18 +35,29 @@ final counts = data["counts"] as List<double>;
           ),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
                 getTitlesWidget: (value, meta) {
                   final index = value.toInt();
-                  if (index < 0 || index >= hours.length) return const SizedBox();
+                  if (index < 0 || index >= hours.length) {
+                    return const SizedBox();
+                  }
                   return Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text(hours[index],
-                        style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+                    child: Text(
+                      hours[index],
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -43,6 +66,7 @@ final counts = data["counts"] as List<double>;
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 28,
+                interval: maxY <= 8 ? 1 : null,
                 getTitlesWidget: (value, meta) => Text(
                   value.toInt().toString(),
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
@@ -55,7 +79,7 @@ final counts = data["counts"] as List<double>;
               x: index,
               barRods: [
                 BarChartRodData(
-                  toY: counts[index].toDouble(),
+                  toY: counts[index],
                   color: const Color(0xFFA25AE6),
                   width: 22,
                   borderRadius: BorderRadius.circular(6),
