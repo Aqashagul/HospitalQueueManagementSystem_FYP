@@ -12,10 +12,6 @@ import '../widgets/background_blobs.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/step_progress_indicator.dart';
 
-
-
-
-
 class RegistrationScreen extends StatefulWidget {
   final String scannedQueueId;
   const RegistrationScreen({super.key, required this.scannedQueueId});
@@ -52,18 +48,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   String _friendlyError(FirebaseAuthException e) {
     switch (e.code) {
       case 'invalid-phone-number':
-        return 'Phone number sahi nahi hai';
+        return 'Invalid phone number';
       case 'too-many-requests':
-        return 'Bohat zyada koshishen ho gayin, thori der baad try karein';
+        return 'Too many attempts. Please try again later.';
       case 'quota-exceeded':
-        return 'SMS limit khatam ho gayi, baad mein try karein';
+        return 'SMS limit reached. Please try again later.';
       case 'network-request-failed':
-        return 'Internet connection check karein';
+        return 'Please check your internet connection.';
       case 'app-not-authorized':
       case 'missing-client-identifier':
-        return 'App Firebase mein authorized nahi (SHA keys check karein)';
+        return 'App is not authorized in Firebase (check SHA keys)';
       default:
-        return e.message ?? 'OTP send nahi ho saka';
+        return e.message ?? 'Could not send OTP. Please try again.';
     }
   }
 
@@ -107,7 +103,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSending = false);
-      _showError('Kuch masla aa gaya, dobara try karein');
+      _showError('Something went wrong. Please try again.');
     }
   }
 
@@ -284,7 +280,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                             return 'Enter a valid phone number';
                                           }
                                           if (!v.startsWith('3')) {
-                                            return 'Number 3 se shuru hona chahiye (e.g. 3001234567)';
+                                            return 'Number must start with 3 (e.g. 3001234567)';
                                           }
                                           return null;
                                         },

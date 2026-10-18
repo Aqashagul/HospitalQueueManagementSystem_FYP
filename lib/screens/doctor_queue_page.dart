@@ -2,14 +2,17 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:queue_management_system/call_patient.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
 import 'package:queue_management_system/models/doctor_queue_model.dart';
 import 'package:queue_management_system/screens/queue_admin_service.dart';
+import 'package:queue_management_system/widgets/confirm_action_dialog.dart' show showConfirmActionDialog;
 import 'package:queue_management_system/widgets/doctor_image.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/shared_widgets.dart';
+import 'package:queue_management_system/widgets/loading_or_offline.dart';
+import 'package:queue_management_system/widgets/notify_report.dart';
+
 
 
 class DoctorQueueDetailPage extends StatefulWidget {
@@ -48,9 +51,17 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   bool _loaded = false;
   String? _loadError;
 
+  // Ticks every 30 seconds so the "wait" time updates live on screen.
+  Timer? _ticker;
+
   @override
   void initState() {
     super.initState();
+
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+
     final id = _doctorId;
     if (id == null) {
       _loaded = true; // doctor not found: nothing to listen to
@@ -77,6 +88,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
 
   @override
   void dispose() {
+    _ticker?.cancel();
     _sub?.cancel();
     super.dispose();
   }
@@ -113,21 +125,6 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
         SnackBar(
           content: Text(message),
           backgroundColor: Colors.red.shade700,
-        ),
-      );
-  }
-
-  // Orange snackbar: the action worked, but the patient could not be
-  // notified (for example the patient deleted the app).
-  void _showWarn(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.orange.shade800,
-          duration: const Duration(seconds: 6),
         ),
       );
   }
@@ -181,21 +178,32 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   }
 
   // Maps a Firestore queue entry into the QueuePatient view model.
-  // Note: estWaitMinutes is not calculated yet (always 0).
+  // estWaitMinutes = how long a Waiting patient has been waiting so far
+  // (now - joinedAt). It is 0 for patients no longer waiting.
   QueuePatient _toQueuePatient(QueryDocumentSnapshot<Map<String, dynamic>> d) {
     final data = d.data();
     final joinedAt = data['joinedAt'];
+    final registrationTime =
+        joinedAt is Timestamp ? joinedAt.toDate() : DateTime.now();
+    final status = QueueAdminService.normalizeStatus(
+      data['status']?.toString(),
+    );
+
+    int waited = 0;
+    if (status == 'Waiting') {
+      final diff = DateTime.now().difference(registrationTime);
+      waited = diff.isNegative ? 0 : diff.inMinutes;
+    }
+
     return QueuePatient(
       token: data['token']?.toString() ?? '--',
       patientName: data['patientName']?.toString() ?? '',
       phoneNumber: data['phone']?.toString() ?? '',
-      registrationTime: joinedAt is Timestamp
-          ? joinedAt.toDate()
-          : DateTime.now(),
+      registrationTime: registrationTime,
       doctorName: widget.doctorName,
       department: widget.department,
-      status: QueueAdminService.normalizeStatus(data['status']?.toString()),
-      estWaitMinutes: 0,
+      status: status,
+      estWaitMinutes: waited,
     );
   }
 
@@ -272,7 +280,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
 
           Expanded(
             child: !_loaded
-                ? const Center(child: CircularProgressIndicator())
+                ? const LoadingOrOffline()
                 : _loadError != null
                     ? Center(
                         child: Text(
@@ -972,11 +980,27 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     }
   }
 
-  // Marks the doctor's current patient as done, resets the detail panel,
-  // then tells the patient their visit is complete.
+  // Asks for confirmation, marks the doctor's current patient as done,
+  // resets the detail panel, then tells the patient their visit is complete.
   Future<void> _handleComplete() async {
+    final shown = currentPatient;
+
+    final confirmed = await showConfirmActionDialog(
+      context,
+      icon: Icons.check_circle_outline_rounded,
+      color: const Color(0xFF2E7D32),
+      title: 'Complete Consultation',
+      message:
+          'Mark this consultation as completed? The patient will be notified.',
+      confirmLabel: 'Complete',
+      token: shown?.token,
+      patientName: shown?.patientName,
+    );
+    if (!confirmed || !mounted) return;
+
     // Remember who is being served BEFORE completing, because after
     // completing nobody is "In Consultation" any more.
+    final current = currentPatient;
     final inConsultation = _docsWithStatus('In Consultation');
     final entryId = inConsultation.isEmpty ? null : inConsultation.first.id;
 
@@ -986,38 +1010,78 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       resetSelection: true,
     );
 
-    if (ok && entryId != null) {
-      final note = await notifyPatient(entryId, 'completed');
-      if (note != null) _showWarn(note);
+    if (ok && entryId != null && mounted) {
+      await notifyAndReport(
+        context,
+        entryId,
+        'completed',
+        patientName: current?.patientName ?? '',
+        token: current?.token ?? '',
+        phone: current?.phoneNumber ?? '',
+      );
     }
   }
 
-  // Calls the SELECTED waiting patient in (any waiting patient, not only the
-  // next one in line), then sends them a push notification.
+  // Asks for confirmation, calls the SELECTED waiting patient in (any waiting
+  // patient, not only the next one in line), then sends them a push
+  // notification.
   Future<void> _handleCallPatient() async {
     final patient = _selectedPatient;
     if (patient == null || patient.status != "Waiting") return;
     final entryId = _entryIdForToken(patient.token);
     if (entryId == null) return;
 
+    final confirmed = await showConfirmActionDialog(
+      context,
+      icon: Icons.campaign_outlined,
+      color: AppColors.primaryPurple,
+      title: 'Call Patient',
+      message:
+          'Call this patient in to see ${widget.doctorName}? They will be notified.',
+      confirmLabel: 'Call Patient',
+      token: patient.token,
+      patientName: patient.patientName,
+    );
+    if (!confirmed || !mounted) return;
+
     final ok = await _perform(
       setLoading: (v) => _isCallingNext = v,
       action: (id) => _service.callSpecific(id, entryId),
       resetSelection: true,
     );
-    if (!ok) return;
+    if (!ok || !mounted) return;
 
-    final note = await notifyPatient(entryId, 'called');
-    if (note != null) _showWarn(note);
+    await notifyAndReport(
+      context,
+      entryId,
+      'called',
+      patientName: patient.patientName,
+      token: patient.token,
+      phone: patient.phoneNumber,
+    );
   }
 
-  // Moves the selected waiting patient one place down the queue, keeps the
-  // highlight on that patient, confirms to the admin, and notifies the patient.
+  // Asks for confirmation, moves the selected waiting patient one place down
+  // the queue, keeps the highlight on that patient, confirms to the admin,
+  // and notifies the patient.
   Future<void> _handleSkip() async {
     final patient = _selectedPatient;
     if (patient == null) return;
     final entryId = _entryIdForToken(patient.token);
     if (entryId == null) return;
+
+    final confirmed = await showConfirmActionDialog(
+      context,
+      icon: Icons.skip_next_rounded,
+      color: Colors.blueGrey.shade500,
+      title: 'Skip Patient',
+      message:
+          'Move this patient one place down the queue? They will be notified.',
+      confirmLabel: 'Skip Patient',
+      token: patient.token,
+      patientName: patient.patientName,
+    );
+    if (!confirmed || !mounted) return;
 
     // Row of this patient in the waiting list before skipping.
     final oldIndex = waitingPatients.indexWhere((p) => p.token == patient.token);
@@ -1038,8 +1102,14 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     }
     _showInfo('Token ${patient.token} moved down one place.');
 
-    final note = await notifyPatient(entryId, 'skipped');
-    if (note != null) _showWarn(note);
+    await notifyAndReport(
+      context,
+      entryId,
+      'skipped',
+      patientName: patient.patientName,
+      token: patient.token,
+      phone: patient.phoneNumber,
+    );
   }
 
   // Asks for confirmation, then removes the selected patient from the queue,
@@ -1050,29 +1120,19 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     final entryId = _entryIdForToken(patient.token);
     if (entryId == null) return;
 
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text("Cancel Token"),
-        content: Text(
-          "Cancel token ${patient.token} for ${patient.patientName}? "
-          "They will be removed from the queue and notified. "
-          "This cannot be undone.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text("Keep Token"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text("Cancel Token"),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmActionDialog(
+      context,
+      icon: Icons.cancel_outlined,
+      color: const Color(0xFFE53935),
+      title: 'Cancel Token',
+      message:
+          'This patient will be removed from the queue and notified. This cannot be undone.',
+      confirmLabel: 'Cancel Token',
+      cancelLabel: 'Keep Token',
+      token: patient.token,
+      patientName: patient.patientName,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     // Remember who this patient is BEFORE deleting, because after deleting
     // the queue entry no longer exists.
@@ -1090,14 +1150,16 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       resetSelection: true,
     );
 
-    if (ok && patientId != null) {
-      final note = await notifyPatient(
+    if (ok && patientId != null && mounted) {
+      await notifyAndReport(
+        context,
         entryId,
         'cancelled',
         patientId: patientId,
+        patientName: patient.patientName,
         token: patient.token,
+        phone: patient.phoneNumber,
       );
-      if (note != null) _showWarn(note);
     }
   }
 }

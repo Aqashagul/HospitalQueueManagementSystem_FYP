@@ -5,12 +5,14 @@ import 'package:queue_management_system/core/app_typography.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
 import 'package:queue_management_system/screens/queue_admin_service.dart';
+import 'package:queue_management_system/widgets/confirm_action_dialog.dart';
 import 'package:queue_management_system/widgets/doctor_image.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/appform_dialog.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/data_table_card.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/search_controller.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/shared_widgets.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/view_detail_doctor_dialog.dart';
+import 'package:queue_management_system/widgets/loading_or_offline.dart';
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
@@ -122,9 +124,6 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     );
   }
 
-  // Deletes a doctor only if they have no patients waiting or in
-  // consultation. Otherwise shows a dialog explaining why it's blocked.
-  // Network / permission failures show a snackbar instead of failing silently.
   // Today's key like "20261014", same format the patient app writes.
   String _todayKey() {
     final d = DateTime.now();
@@ -157,7 +156,28 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
         .length;
   }
 
+  // Popup shown when a doctor cannot be deleted because patients are still
+  // waiting or in consultation.
+  Future<void> _showCannotDeleteDoctor(DoctorModel doc, int count) {
+    return showNoticeDialog(
+      context,
+      icon: Icons.block_rounded,
+      color: Colors.orange.shade700,
+      title: 'Cannot Delete Doctor',
+      message:
+          '${doc.name} currently has $count '
+          '${count == 1 ? 'patient' : 'patients'} '
+          '(Waiting or In Consultation), so this doctor cannot be deleted. '
+          'Please wait until the queue is clear.',
+      buttonLabel: 'Got it',
+    );
+  }
+
+  // Deletes a doctor only if they have no patients waiting or in
+  // consultation, and only after the admin confirms in a popup.
+  // Network / permission failures show a snackbar instead of failing silently.
   Future<void> _deleteDoctor(DoctorModel doc) async {
+    // 1) Block when the doctor still has patients in the queue.
     int activePatients;
     try {
       activePatients = await _firestoreActivePatients(doc.id.toString());
@@ -168,24 +188,38 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     if (!mounted) return;
 
     if (activePatients > 0) {
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text("Cannot Delete Doctor"),
-          content: Text(
-            "${doc.name} currently has $activePatients "
-            "${activePatients == 1 ? 'patient' : 'patients'} "
-            "(Waiting or In Consultation), so this doctor cannot be deleted. "
-            "Please wait until the queue is clear.",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("OK"),
-            ),
-          ],
-        ),
-      );
+      await _showCannotDeleteDoctor(doc, activePatients);
+      return;
+    }
+
+    // 2) Ask for confirmation.
+    final confirmed = await showConfirmActionDialog(
+      context,
+      icon: Icons.delete_outline_rounded,
+      color: const Color(0xFFE53935),
+      title: 'Delete Doctor',
+      message: 'This doctor will be permanently removed. '
+          'This cannot be undone.',
+      confirmLabel: 'Delete',
+      content: DialogInfoCard(
+        badge: doc.department,
+        title: doc.name,
+        subtitle: doc.specialization,
+      ),
+    );
+    if (!confirmed || !mounted) return;
+
+    // 3) Check again: a patient may have joined while the popup was open.
+    try {
+      activePatients = await _firestoreActivePatients(doc.id.toString());
+    } catch (e) {
+      _showErrorSnack(_friendlyError(e));
+      return;
+    }
+    if (!mounted) return;
+
+    if (activePatients > 0) {
+      await _showCannotDeleteDoctor(doc, activePatients);
       return;
     }
 
@@ -234,7 +268,6 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
               department: values["department"],
               patientsCount: 0,
               status: values["availability"],
-              // NOTE: uploaded photos are not saved to Firestore yet.
               photoBytes: values["photo"],
               experience: values["experience"],
               workingHours: values["workingHours"],
@@ -487,8 +520,14 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Doctor records table
-                    _buildTable(filteredDoctors, isMobile: isMobile),
+                    // Doctor records table (loading animation until the
+                    // doctors have arrived from Firebase)
+                    AppdataStore().doctorsLoaded
+                        ? _buildTable(filteredDoctors, isMobile: isMobile)
+                        : const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 60),
+                            child: LoadingOrOffline(message: "Loading..."),
+                          ),
 
                     const SizedBox(height: 80),
                   ],
@@ -749,9 +788,10 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                 child: Icon(Icons.edit_outlined, size: 18, color: Colors.grey.shade700),
               ),
               const SizedBox(width: 14),
-              // Delete doctor from Firestore. Blocked (with a dialog) if the
-              // doctor has Waiting / In Consultation patients; errors show a
-              // snackbar. The list refreshes automatically via the listener.
+              // Delete doctor from Firestore. Blocked (with a popup) if the
+              // doctor has Waiting / In Consultation patients; otherwise the
+              // admin must confirm in a popup first. The list refreshes
+              // automatically via the listener.
               GestureDetector(
                 onTap: () => _deleteDoctor(doc),
                 child: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),

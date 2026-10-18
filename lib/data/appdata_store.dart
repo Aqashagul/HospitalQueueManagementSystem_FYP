@@ -3,9 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/models/department_model.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
-import 'package:queue_management_system/models/doctor_queue_model.dart';
 import 'package:queue_management_system/models/patient_model.dart';
-import 'package:queue_management_system/models/queue_model.dart';
+import 'package:flutter/foundation.dart';
 
 class AppdataStore extends ChangeNotifier {
   //Singleton class
@@ -18,6 +17,12 @@ class AppdataStore extends ChangeNotifier {
   // Live Firestore connections (one per collection).
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _departmentsSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _doctorsSub;
+
+  // True after the first Firestore answer arrived. Pages show the loading
+  // animation until then, so "No department yet" only shows when there
+  // really are none.
+  bool departmentsLoaded = false;
+  bool doctorsLoaded = false;
 
   // -------------------------------------------------------------------------
   // Start / stop listening to Firestore
@@ -40,45 +45,76 @@ class AppdataStore extends ChangeNotifier {
 
     return timeOf(b.data()).compareTo(timeOf(a.data()));
   }
+
   /// Starts listening to Firestore. Call once after the admin logs in.
   void startListening() {
-    _departmentsSub ??= _db.collection('departments').snapshots().listen(
-      (snapshot) {
-        final docs = snapshot.docs.toList()..sort(_newestFirst);
-        departments
-          ..clear()
-          ..addAll(docs.map((doc) {
-            final data = doc.data();
-            return Department.fromMap(
-              doc.id,
-              data,
-              assignedDoctors:
-                  doctors.where((d) => d.department == data['name']).length,
-            );
-          }));
-        notifyListeners();
-      },
-      onError: (e) => debugPrint('Departments listener error: $e'),
-    );
+    _departmentsSub ??= _db
+        .collection('departments')
+        .snapshots()
+        .listen(
+          (snapshot) {
+            final docs = snapshot.docs.toList()..sort(_newestFirst);
+            departments
+              ..clear()
+              ..addAll(
+                docs.map((doc) {
+                  final data = doc.data();
+                  return Department.fromMap(
+                    doc.id,
+                    data,
+                    assignedDoctors: doctors
+                        .where((d) => d.department == data['name'])
+                        .length,
+                  );
+                }),
+              );
+            // The first answer can come from an empty local cache; wait for the
+            // server's answer unless there is data already.
+            if (!snapshot.metadata.isFromCache || snapshot.docs.isNotEmpty) {
+              departmentsLoaded = true;
+            }
+            notifyListeners();
+          },
+          onError: (e) {
+            debugPrint('Departments listener error: $e');
+            departmentsLoaded = true; // do not spin forever on an error
+            notifyListeners();
+          },
+        );
 
-    _doctorsSub ??= _db.collection('doctors').snapshots().listen(
-      (snapshot) {
-        final docs = snapshot.docs.toList()..sort(_newestFirst);
-        doctors
-          ..clear()
-          ..addAll(docs.map((doc) {
-            final data = doc.data();
-            return DoctorModel.fromMap(
-              doc.id,
-              data,
-              patientsCount:
-                  patient.where((p) => p.doctor == data['name']).length,
-            );
-          }));
-        notifyListeners();
-      },
-      onError: (e) => debugPrint('Doctors listener error: $e'),
-    );
+    _doctorsSub ??= _db
+        .collection('doctors')
+        .snapshots()
+        .listen(
+          (snapshot) {
+            final docs = snapshot.docs.toList()..sort(_newestFirst);
+            doctors
+              ..clear()
+              ..addAll(
+                docs.map((doc) {
+                  final data = doc.data();
+                  return DoctorModel.fromMap(
+                    doc.id,
+                    data,
+                    patientsCount: patient
+                        .where((p) => p.doctor == data['name'])
+                        .length,
+                  );
+                }),
+              );
+            // Same rule as departments: an empty cache answer is not final.
+            // notifyListeners() se PEHLE set karna zaroori hai.
+            if (!snapshot.metadata.isFromCache || snapshot.docs.isNotEmpty) {
+              doctorsLoaded = true;
+            }
+            notifyListeners();
+          },
+          onError: (e) {
+            debugPrint('Doctors listener error: $e');
+            doctorsLoaded = true; // error aaye tab bhi loading band ho
+            notifyListeners();
+          },
+        );
   }
 
   /// Stops listening and clears local data. Call on logout.
@@ -90,6 +126,9 @@ class AppdataStore extends ChangeNotifier {
     await _doctorsSub?.cancel();
     _doctorsSub = null;
     doctors.clear();
+
+    departmentsLoaded = false;
+    doctorsLoaded = false;
   }
 
   // -------------------------------------------------------------------------
@@ -99,7 +138,7 @@ class AppdataStore extends ChangeNotifier {
   // Filled automatically from Firestore (see startListening).
   final List<Department> departments = [];
 
-    Future<void> addDepartment(Department dept) {
+  Future<void> addDepartment(Department dept) {
     return _db.collection('departments').add({
       ...dept.toMap(),
       // Server time, used to show the newest department first.
@@ -117,7 +156,7 @@ class AppdataStore extends ChangeNotifier {
     await _db.collection('departments').doc(dept.id).delete();
   }
 
-    /// Deletes a department together with every doctor that belongs to it,
+  /// Deletes a department together with every doctor that belongs to it,
   /// in one batch (all succeed or none do).
   Future<void> removeDepartmentWithDoctors(Department dept) async {
     if (dept.id == null) return;
@@ -167,18 +206,162 @@ class AppdataStore extends ChangeNotifier {
     if (existing.docs.isNotEmpty) return;
 
     const seed = [
-      DoctorModel(name: "Dr.Sana", specialization: "Cardiologist", department: "Cardiology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_sana.jpg", experience: "12 Years", workingHours: "9:00 AM - 5:00 PM", qualification: "MBBS, FCPS (Cardiology)", tokenPrefix: "A", fee: 2500),
-      DoctorModel(name: "Dr.Amna Siddiqui", specialization: "Internal Medicine", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_amna.jpg", experience: "6 Years", workingHours: "10:00 AM - 6:00 PM", qualification: "MBBS, MD", tokenPrefix: "F", fee: 1500),
-      DoctorModel(name: "Dr.Sarah", specialization: "Cardiac Surgeon", department: "Cardiology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_sarah.jpg", experience: "10 Years", workingHours: "10:00 AM - 6:00 PM", qualification: "MBBS, FRCS", tokenPrefix: "D", fee: 2000),
-      DoctorModel(name: "Dr.Hamza", specialization: "Cardiologist", department: "Cardiology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_hamza.jpg", experience: "8 Years", workingHours: "8:00 AM - 4:00 PM", qualification: "MBBS, FCPS", tokenPrefix: "C", fee: 1000),
-      DoctorModel(name: "Dr.Hashim", specialization: "General Physician", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_hashim.jpg", experience: "10 Years", workingHours: "9:00 AM - 5:00 PM", qualification: "MBBS, FCPS", tokenPrefix: "B", fee: 2000),
-      DoctorModel(name: "Dr.Hoorain", specialization: "Medicine", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_hoorain.jpg", experience: "15 Years", workingHours: "8:00 AM - 4:00 PM", qualification: "MBBS, MD", tokenPrefix: "E", fee: 1200),
-      DoctorModel(name: "Dr.Areeba", specialization: "Cosmetics", department: "Dermatology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_areba.jpg", experience: "4 Years", workingHours: "1:00 PM - 9:00 PM", qualification: "MBBS, MD (Derma)", tokenPrefix: "J", fee: 1300),
-      DoctorModel(name: "Dr.Fatima Noor", specialization: "Family Medicine", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_fatima.jpg", experience: "8 Years", workingHours: "10:00 AM - 5:00 PM", qualification: "MBBS, DCH", tokenPrefix: "G", fee: 500),
-      DoctorModel(name: "Dr.Usman Tariq", specialization: "General Physician", department: "General Medicine", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_usman.jpg", experience: "9 Years", workingHours: "11:00 AM - 7:00 PM", qualification: "MBBS, FCPS", tokenPrefix: "H", fee: 500),
-      DoctorModel(name: "Dr.Zainab Hussain", specialization: "Dermatologist", department: "Dermatology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_zainab.jpg", experience: "5 Years", workingHours: "12:00 PM - 8:00 PM", qualification: "MBBS, DDVL", tokenPrefix: "I", fee: 700),
-      DoctorModel(name: "Dr.Imran", specialization: "Dermatologist", department: "Dermatology", patientsCount: 0, status: "Available", photoAssetPath: "assets/images/Dr_imran.jpg", experience: "10 Years", workingHours: "9:00 AM - 5:00 PM", qualification: "MBBS, DDVL", tokenPrefix: "K", fee: 1000),
-      DoctorModel(name: "Dr.Rubina", specialization: "General Physician", department: "General Medicine", patientsCount: 0, status: "Unavailable", photoAssetPath: "assets/images/Dr_rubab.jpg", experience: "6 Years", workingHours: "11:00 AM - 7:00 PM", qualification: "MBBS", tokenPrefix: "R", fee: 800),
+      DoctorModel(
+        name: "Dr.Sana",
+        specialization: "Cardiologist",
+        department: "Cardiology",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_sana.jpg",
+        experience: "12 Years",
+        workingHours: "9:00 AM - 5:00 PM",
+        qualification: "MBBS, FCPS (Cardiology)",
+        tokenPrefix: "A",
+        fee: 2500,
+      ),
+      DoctorModel(
+        name: "Dr.Amna Siddiqui",
+        specialization: "Internal Medicine",
+        department: "General Medicine",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_amna.jpg",
+        experience: "6 Years",
+        workingHours: "10:00 AM - 6:00 PM",
+        qualification: "MBBS, MD",
+        tokenPrefix: "F",
+        fee: 1500,
+      ),
+      DoctorModel(
+        name: "Dr.Sarah",
+        specialization: "Cardiac Surgeon",
+        department: "Cardiology",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_sarah.jpg",
+        experience: "10 Years",
+        workingHours: "10:00 AM - 6:00 PM",
+        qualification: "MBBS, FRCS",
+        tokenPrefix: "D",
+        fee: 2000,
+      ),
+      DoctorModel(
+        name: "Dr.Hamza",
+        specialization: "Cardiologist",
+        department: "Cardiology",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_hamza.jpg",
+        experience: "8 Years",
+        workingHours: "8:00 AM - 4:00 PM",
+        qualification: "MBBS, FCPS",
+        tokenPrefix: "C",
+        fee: 1000,
+      ),
+      DoctorModel(
+        name: "Dr.Hashim",
+        specialization: "General Physician",
+        department: "General Medicine",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_hashim.jpg",
+        experience: "10 Years",
+        workingHours: "9:00 AM - 5:00 PM",
+        qualification: "MBBS, FCPS",
+        tokenPrefix: "B",
+        fee: 2000,
+      ),
+      DoctorModel(
+        name: "Dr.Hoorain",
+        specialization: "Medicine",
+        department: "General Medicine",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_hoorain.jpg",
+        experience: "15 Years",
+        workingHours: "8:00 AM - 4:00 PM",
+        qualification: "MBBS, MD",
+        tokenPrefix: "E",
+        fee: 1200,
+      ),
+      DoctorModel(
+        name: "Dr.Areeba",
+        specialization: "Cosmetics",
+        department: "Dermatology",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_areba.jpg",
+        experience: "4 Years",
+        workingHours: "1:00 PM - 9:00 PM",
+        qualification: "MBBS, MD (Derma)",
+        tokenPrefix: "J",
+        fee: 1300,
+      ),
+      DoctorModel(
+        name: "Dr.Fatima Noor",
+        specialization: "Family Medicine",
+        department: "General Medicine",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_fatima.jpg",
+        experience: "8 Years",
+        workingHours: "10:00 AM - 5:00 PM",
+        qualification: "MBBS, DCH",
+        tokenPrefix: "G",
+        fee: 500,
+      ),
+      DoctorModel(
+        name: "Dr.Usman Tariq",
+        specialization: "General Physician",
+        department: "General Medicine",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_usman.jpg",
+        experience: "9 Years",
+        workingHours: "11:00 AM - 7:00 PM",
+        qualification: "MBBS, FCPS",
+        tokenPrefix: "H",
+        fee: 500,
+      ),
+      DoctorModel(
+        name: "Dr.Zainab Hussain",
+        specialization: "Dermatologist",
+        department: "Dermatology",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_zainab.jpg",
+        experience: "5 Years",
+        workingHours: "12:00 PM - 8:00 PM",
+        qualification: "MBBS, DDVL",
+        tokenPrefix: "I",
+        fee: 700,
+      ),
+      DoctorModel(
+        name: "Dr.Imran",
+        specialization: "Dermatologist",
+        department: "Dermatology",
+        patientsCount: 0,
+        status: "Available",
+        photoAssetPath: "assets/images/Dr_imran.jpg",
+        experience: "10 Years",
+        workingHours: "9:00 AM - 5:00 PM",
+        qualification: "MBBS, DDVL",
+        tokenPrefix: "K",
+        fee: 1000,
+      ),
+      DoctorModel(
+        name: "Dr.Rubina",
+        specialization: "General Physician",
+        department: "General Medicine",
+        patientsCount: 0,
+        status: "Unavailable",
+        photoAssetPath: "assets/images/Dr_rubab.jpg",
+        experience: "6 Years",
+        workingHours: "11:00 AM - 7:00 PM",
+        qualification: "MBBS",
+        tokenPrefix: "R",
+        fee: 800,
+      ),
     ];
 
     final batch = _db.batch();
@@ -188,8 +371,9 @@ class AppdataStore extends ChangeNotifier {
     await batch.commit();
   }
 
-  // ===== Everything below this line stays as it was =====
-  // (final List<PatientModel> patient = [ ... ] and the rest of the file)
+  // -------------------------------------------------------------------------
+  // Patients (abhi local dummy data)
+  // -------------------------------------------------------------------------
 
   final List<PatientModel> patient = [
     // ---- Dr.Sana (3) ----
@@ -452,6 +636,7 @@ class AppdataStore extends ChangeNotifier {
     // ---- Dr.Areeba (0) — koi patient nahi ----
     // ---- Dr.Imran (0) — koi patient nahi ----
   ];
+
   void addPatients(Department dept) {
     departments.add(dept);
   }
@@ -459,149 +644,6 @@ class AppdataStore extends ChangeNotifier {
   void removePatients(Department dept) {
     departments.remove(dept);
   }
-
-  final List<DoctorQueueStatus> queues = const [
-    DoctorQueueStatus(
-      name: "Dr.Sana",
-      specialization: "Cardiology",
-      currentToken: "A-002",
-      waitingCount: 2,
-      department: "Cardiology",
-      completedToday: 0,
-    ),
-
-    DoctorQueueStatus(
-      name: "Dr.Sarah",
-      specialization: "Cardiology",
-      currentToken: "D-001",
-      department: "Cardiology",
-      waitingCount: 1,
-      completedToday: 0,
-    ),
-
-    DoctorQueueStatus(
-      name: "Dr.Hamza",
-      specialization: "Cardiology",
-      currentToken: "--",
-      waitingCount: 1,
-      department: "Cardiology",
-      completedToday: 0,
-    ),
-
-    DoctorQueueStatus(
-      name: "Dr.Hashim",
-      specialization: "General Medicine",
-      currentToken: "--",
-      waitingCount: 3,
-      department: "General Medicine",
-      completedToday: 0,
-    ),
-  ];
-
-  final List<QueuePatient> doctorQueueData = [
-    // DR. SANA
-    QueuePatient(
-      token: "A-001",
-      status: "Waiting",
-      patientName: "Sahil",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 30),
-      doctorName: "Dr.Sana",
-      department: "Cardiology",
-      estWaitMinutes: 15,
-    ),
-
-    QueuePatient(
-      token: "A-002",
-      status: "In Consultation",
-      patientName: "Afifa",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 35),
-      doctorName: "Dr.Sana",
-      department: "Cardiology",
-      estWaitMinutes: 0,
-    ),
-
-    QueuePatient(
-      token: "A-003",
-      status: "Waiting",
-      patientName: "Hoorain",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 40),
-      doctorName: "Dr.Sana",
-      department: "Cardiology",
-      estWaitMinutes: 30,
-    ),
-
-    // DR. SARAH
-    QueuePatient(
-      token: "D-001",
-      status: "In Consultation",
-      patientName: "Arooba",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 40),
-      doctorName: "Dr.Sarah",
-      department: "Cardiology",
-      estWaitMinutes: 0,
-    ),
-
-    QueuePatient(
-      token: "D-002",
-      status: "Waiting",
-      patientName: "Ashish",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 45),
-      doctorName: "Dr.Sarah",
-      department: "Cardiology",
-      estWaitMinutes: 15,
-    ),
-
-    //  DR. HAMZA
-    QueuePatient(
-      token: "C-001",
-      status: "Waiting",
-      patientName: "Sorab",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 50),
-      doctorName: "Dr.Hamza",
-      department: "Cardiology",
-      estWaitMinutes: 0,
-    ),
-
-    // DR. HASHIM
-    QueuePatient(
-      token: "B-001",
-      status: "Waiting",
-      patientName: "Rumi",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 25),
-      doctorName: "Dr.Hashim",
-      department: "General Medicine",
-      estWaitMinutes: 15,
-    ),
-
-    QueuePatient(
-      token: "B-002",
-      status: "Waiting",
-      patientName: "Akansha",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 35),
-      doctorName: "Dr.Hashim",
-      department: "General Medicine",
-      estWaitMinutes: 30,
-    ),
-
-    QueuePatient(
-      token: "B-003",
-      status: "Waiting",
-      patientName: "Alina",
-      phoneNumber: "9222222222",
-      registrationTime: DateTime(2026, 8, 13, 12, 45),
-      doctorName: "Dr.Hashim",
-      department: "General Medicine",
-      estWaitMinutes: 45,
-    ),
-  ];
 
   // ===== Token generation =====
 

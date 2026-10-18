@@ -21,9 +21,20 @@ class CompletedVsCancelledChart extends StatelessWidget {
       return SizedBox(
         height: 260,
         child: Center(
-          child: Text(
-            "No data in this period",
-            style: TextStyle(color: Colors.grey.shade500),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/no_data.png',
+                height: 150,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "No data in this period",
+                style: TextStyle(color: Colors.grey.shade500),
+              ),
+            ],
           ),
         ),
       );

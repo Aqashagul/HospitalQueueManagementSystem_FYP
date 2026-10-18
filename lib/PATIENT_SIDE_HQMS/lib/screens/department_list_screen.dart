@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/models/department_model.dart';
+import 'package:queue_management_system/widgets/loading_or_offline.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
 import 'doctor_list_screen.dart';
@@ -154,6 +155,12 @@ class _DepartmentListScreenState extends State<DepartmentListScreen> {
                     child: ListenableBuilder(
                       listenable: AppdataStore(),
                       builder: (context, _) {
+                                  if (!AppdataStore().doctorsLoaded) {
+                              return const LoadingOrOffline(
+                                message: "Loading doctors...",
+                              );
+                            
+}
                         final departments = _visibleDepartments();
 
                         if (departments.isEmpty) {

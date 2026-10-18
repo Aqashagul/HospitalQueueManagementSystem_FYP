@@ -4,9 +4,6 @@ import 'package:queue_management_system/core/app_color.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:queue_management_system/screens/queue_admin_service.dart';
 
-// >>> ADD THE IMPORT FOR QueueAdminService HERE <<<
-// (the same file your Queue Management page imports it from.)
-// AppdataStore is no longer needed in this file.
 
 class QueueEntry {
   final String token;
@@ -152,12 +149,23 @@ class _CurrentQueueState extends State<CurrentQueue> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
-                        child: Text(
-                          "No active patients in the queue right now.",
-                          style: TextStyle(
-                            color: Colors.grey.shade500,
-                            fontSize: 14,
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image.asset(
+                              'assets/images/no_data.png',
+                              width: 260,
+                              fit: BoxFit.contain,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "No active patients in the queue right now.",
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     )

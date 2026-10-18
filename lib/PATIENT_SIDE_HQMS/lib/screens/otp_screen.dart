@@ -105,8 +105,8 @@ class _OtpScreenState extends State<OtpScreen> {
           setState(() {
             _canResend = true;
             _errorText = e.code == 'too-many-requests'
-                ? 'Bohat zyada koshishen ho gayin, thori der baad try karein'
-                : (e.message ?? 'OTP resend nahi ho saka');
+                ? 'Too many attempts. Please try again later.'
+                : (e.message ?? 'Could not resend OTP. Please try again.');
           });
         },
         codeSent: (id, token) {
@@ -118,7 +118,7 @@ class _OtpScreenState extends State<OtpScreen> {
       );
     } catch (_) {
       if (!mounted) return;
-      setState(() => _errorText = 'OTP resend nahi ho saka');
+      setState(() => _errorText = 'Could not resend OTP. Please try again.');
     } finally {
       _isResending = false;
     }
@@ -197,10 +197,10 @@ class _OtpScreenState extends State<OtpScreen> {
     } on FirebaseException catch (e) {
       // Firestore error (rules / network)
       if (!mounted) return;
-      setState(() => _errorText = 'Data save nahi hua: ${e.message ?? e.code}');
+      setState(() => _errorText = 'Failed to save data: ${e.message ?? e.code}');
     } catch (_) {
       if (!mounted) return;
-      setState(() => _errorText = 'Kuch masla aa gaya, dobara try karein');
+      setState(() => _errorText = 'Something went wrong. Please try again.');
     } finally {
       if (mounted) setState(() => _isVerifying = false);
     }

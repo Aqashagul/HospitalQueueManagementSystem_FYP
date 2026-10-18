@@ -316,9 +316,23 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
 
   // Read-only table: Token, Patient, Department, Doctor, Phone, Status.
   Widget _buildTable(List<_PatientRow> patients, {required bool isMobile}) {
+    // No patients yet: show the empty-state picture instead of the table.
+    if (patients.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Image.asset(
+            'assets/images/patients.png',
+            width: isMobile ? 260 : 380,
+            fit: BoxFit.contain,
+          ),
+        ),
+      );
+    }
+
     final table = DataTableCard<_PatientRow>(
       items: patients,
-      emptyMessage: "No patients yet",
+      emptyMessage: "No patients found",
       columns: [
         TableColumn<_PatientRow>(
           label: "Token",

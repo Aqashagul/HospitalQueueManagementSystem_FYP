@@ -5,16 +5,16 @@ import 'package:queue_management_system/core/app_typography.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/models/department_model.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
+import 'package:queue_management_system/widgets/confirm_action_dialog.dart';
 import 'package:queue_management_system/widgets/department_avatar.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/appform_dialog.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/data_table_card.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/search_controller.dart';
 import 'package:queue_management_system/widgets/generic_p.dart/shared_widgets.dart';
+import 'package:queue_management_system/widgets/loading_or_offline.dart';
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
-
-
 
 class DepartmentManagementPage extends StatefulWidget {
   const DepartmentManagementPage({super.key});
@@ -63,8 +63,18 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
   // Returns today's date like "Oct 13, 2026".
   String _formatToday() {
     const months = [
-      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
     ];
     final now = DateTime.now();
     return "${months[now.month - 1]} ${now.day}, ${now.year}";
@@ -90,10 +100,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.red.shade700,
-        ),
+        SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
       );
   }
 
@@ -248,58 +255,49 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
     );
   }
 
-  // Shown when a department cannot be deleted because some of its doctors
-  // still have patients waiting or in consultation.
+  // Popup shown when a department cannot be deleted because some of its
+  // doctors still have patients waiting or in consultation.
   Future<void> _showBlockedDeleteDialog(
     Department dept,
     Map<String, int> busyDoctors,
   ) {
-    return showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text("Cannot Delete Department"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "\"${dept.name}\" cannot be deleted because "
-              "${busyDoctors.length == 1 ? 'a doctor' : 'some doctors'} "
-              "in this department still ${busyDoctors.length == 1 ? 'has' : 'have'} "
-              "patients (Waiting or In Consultation):",
-            ),
-            const SizedBox(height: 12),
-            ...busyDoctors.entries.map(
-              (e) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  "• ${e.key} (${e.value} ${e.value == 1 ? 'patient' : 'patients'})",
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
+    final bool single = busyDoctors.length == 1;
+
+    return showNoticeDialog(
+      context,
+      icon: Icons.block_rounded,
+      color: Colors.orange.shade700,
+      title: 'Cannot Delete Department',
+      message:
+          '"${dept.name}" cannot be deleted because '
+          '${single ? 'a doctor' : 'some doctors'} in this department '
+          'still ${single ? 'has' : 'have'} patients '
+          '(Waiting or In Consultation).',
+      buttonLabel: 'Got it',
+      content: DialogListCard(
+        rows: busyDoctors.entries
+            .map(
+              (e) => MapEntry(
+                e.key,
+                '${e.value} ${e.value == 1 ? 'patient' : 'patients'}',
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text("OK"),
-          ),
-        ],
+            )
+            .toList(),
       ),
     );
   }
 
-  // Asks for confirmation before deleting a department. Blocks the delete if
-  // any doctor in it still has active patients. If it has doctors with no
-  // active patients, warns that they will be deleted too.
+  // Deletes a department only after the admin confirms in a popup. Blocks the
+  // delete if any doctor in it still has active patients. If it has doctors
+  // with no active patients, the popup warns that they will be deleted too.
   Future<void> _confirmDeleteDepartment(Department dept) async {
     final store = AppdataStore();
-    final deptDoctors =
-        store.doctors.where((d) => d.department == dept.name).toList();
+    final deptDoctors = store.doctors
+        .where((d) => d.department == dept.name)
+        .toList();
     final doctorCount = deptDoctors.length;
 
-    // Block: any doctor here with waiting / in-consultation patients
+    // 1) Block: any doctor here with waiting / in-consultation patients
     // (checked live in Firestore).
     Map<String, int> busyDoctors;
     try {
@@ -314,60 +312,54 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
       return;
     }
 
-    // No doctors inside: delete straight away.
-    if (doctorCount == 0) {
-      try {
-        await store.removeDepartment(dept);
-      } catch (e) {
-        _showErrorSnack(_friendlyError(e));
-      }
+    // 2) Ask for confirmation.
+    final String message = doctorCount == 0
+        ? 'This department will be permanently removed. '
+              'This cannot be undone.'
+        : 'This department has $doctorCount '
+              '${doctorCount == 1 ? 'doctor' : 'doctors'}. Deleting it will '
+              'also delete ${doctorCount == 1 ? 'that doctor' : 'all of these doctors'}. '
+              'This cannot be undone.';
+
+    final confirmed = await showConfirmActionDialog(
+      context,
+      icon: Icons.delete_outline_rounded,
+      color: const Color(0xFFE53935),
+      title: 'Delete Department',
+      message: message,
+      confirmLabel: 'Delete',
+      content: DialogInfoCard(
+        badge: doctorCount == 0
+            ? null
+            : '$doctorCount ${doctorCount == 1 ? 'doctor' : 'doctors'}',
+        title: dept.name,
+        subtitle: dept.head.isEmpty ? null : 'Head: ${dept.head}',
+      ),
+    );
+    if (!confirmed || !mounted) return;
+
+    // 3) Re-check: a patient may have joined a queue while the popup was open.
+    Map<String, int> nowBusy;
+    try {
+      nowBusy = await _busyDoctors(deptDoctors);
+    } catch (e) {
+      _showErrorSnack(_friendlyError(e));
+      return;
+    }
+    if (!mounted) return;
+    if (nowBusy.isNotEmpty) {
+      await _showBlockedDeleteDialog(dept, nowBusy);
       return;
     }
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text("Delete Department"),
-        content: Text(
-          "\"${dept.name}\" has $doctorCount "
-          "${doctorCount == 1 ? 'doctor' : 'doctors'}. "
-          "If you delete this department, "
-          "${doctorCount == 1 ? 'that doctor' : 'all of these doctors'} "
-          "will also be deleted. This cannot be undone.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text("Delete"),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      // Re-check: a patient may have joined a queue while the dialog was open.
-      Map<String, int> nowBusy;
-      try {
-        nowBusy = await _busyDoctors(deptDoctors);
-      } catch (e) {
-        _showErrorSnack(_friendlyError(e));
-        return;
-      }
-      if (nowBusy.isNotEmpty) {
-        if (mounted) await _showBlockedDeleteDialog(dept, nowBusy);
-        return;
-      }
-
-      try {
+    try {
+      if (doctorCount == 0) {
+        await store.removeDepartment(dept);
+      } else {
         await store.removeDepartmentWithDoctors(dept);
-      } catch (e) {
-        _showErrorSnack(_friendlyError(e));
       }
+    } catch (e) {
+      _showErrorSnack(_friendlyError(e));
     }
   }
 
@@ -400,10 +392,12 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
     // first (it sorts by the createdAt timestamp), so nothing to do here.
 
     // Step 3: intersect the filtered+sorted list with the current search query.
-    final searchedNames =
-        departmentSearch.filteredItems.map((d) => d.name).toSet();
-    departments =
-        departments.where((d) => searchedNames.contains(d.name)).toList();
+    final searchedNames = departmentSearch.filteredItems
+        .map((d) => d.name)
+        .toSet();
+    departments = departments
+        .where((d) => searchedNames.contains(d.name))
+        .toList();
 
     // Stats always come from the full unfiltered list.
     final int totalDepartments = allDepartments.length;
@@ -435,8 +429,10 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
                     if (!isMobile) ...[
                       Row(
                         children: [
-                          Text("Department Management",
-                              style: AppTypography.title),
+                          Text(
+                            "Department Management",
+                            style: AppTypography.title,
+                          ),
                           const Spacer(),
                           const LiveDateTimeWidget(),
                         ],
@@ -464,8 +460,14 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Department records table
-                    _buildTable(departments, isMobile: isMobile),
+                    // Department records table (loading animation until the
+                    // departments have arrived from Firebase)
+                    AppdataStore().departmentsLoaded
+                        ? _buildTable(departments, isMobile: isMobile)
+                        : const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 60),
+                            child: LoadingOrOffline(message: "Loading..."),
+                          ),
 
                     const SizedBox(height: 80),
                   ],
@@ -492,8 +494,9 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
     required int activeCount,
     required int inactiveCount,
   }) {
-    final cardPadding =
-        isMobile ? const EdgeInsets.all(12) : const EdgeInsets.all(18);
+    final cardPadding = isMobile
+        ? const EdgeInsets.all(12)
+        : const EdgeInsets.all(18);
     final cardIconPadding = isMobile ? 8.0 : 12.0;
     final cardIconSize = isMobile ? 18.0 : 22.0;
     final cardValueFontSize = isMobile ? 18.0 : 22.0;
@@ -700,10 +703,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
             final count = AppdataStore().doctors
                 .where((d) => d.department == dept.name)
                 .length;
-            return Text(
-              "$count",
-              style: const TextStyle(fontSize: 14),
-            );
+            return Text("$count", style: const TextStyle(fontSize: 14));
           },
         ),
         TableColumn<Department>(
@@ -719,10 +719,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
           flex: 2,
           cellBuilder: (dept) => Text(
             dept.createdDate,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade600,
-            ),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
           ),
         ),
         TableColumn<Department>(
@@ -740,8 +737,9 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
                 ),
               ),
               const SizedBox(width: 16),
-              // Delete department from Firestore. Blocked if any of its
-              // doctors has active patients. The list refreshes
+              // Delete department from Firestore. Blocked (with a popup) if
+              // any of its doctors has active patients; otherwise the admin
+              // must confirm in a popup first. The list refreshes
               // automatically via the listener.
               GestureDetector(
                 onTap: () => _confirmDeleteDepartment(dept),

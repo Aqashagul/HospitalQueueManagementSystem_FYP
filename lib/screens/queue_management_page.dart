@@ -9,6 +9,7 @@ import 'package:queue_management_system/models/queue_model.dart';
 import 'package:queue_management_system/screens/doctor_queue_page.dart';
 import 'package:queue_management_system/screens/queue_admin_service.dart';
 import 'package:queue_management_system/widgets/doctor_image.dart';
+import 'package:queue_management_system/widgets/loading_or_offline.dart';
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
@@ -313,32 +314,46 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
                             ),
                           );
                         }
-                        if (!snapshot.hasData) {
-                          return const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 40),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
+                       
+
+                        if (!snapshot.hasData || !AppdataStore().doctorsLoaded) {
+  return const Padding(
+    padding: EdgeInsets.symmetric(vertical: 40),
+    child: LoadingOrOffline(message: "Loading..."),
+  );
+}
+
 
                         final visible = _applyFilters(
                           _buildQueues(snapshot.data!.docs),
                         );
 
-                        if (visible.isEmpty) {
+                                                 if (visible.isEmpty) {
                           return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 40),
+                            padding: const EdgeInsets.symmetric(vertical: 24),
                             child: Center(
-                              child: Text(
-                                "No doctors match the selected filters",
-                                style: TextStyle(
-                                  color: Colors.grey.shade500,
-                                  fontSize: 14,
-                                ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Image.asset(
+                                    'assets/images/no_q.png',
+                                    width: isMobile ? 220 : 420,
+                                    fit: BoxFit.contain,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    "Queues will appear here when doctors start receiving patients",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.grey.shade400,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           );
                         }
-
                         return Column(
                           children: visible.map((queue) {
                             return Padding(
