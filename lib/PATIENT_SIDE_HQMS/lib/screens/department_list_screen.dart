@@ -5,6 +5,8 @@ import 'package:queue_management_system/widgets/loading_or_offline.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
 import 'doctor_list_screen.dart';
+import '../widgets/app_bottom_nav.dart';
+import '../widgets/notification_bell.dart';
 
 const bool _hideInactiveDepartments = true;
 
@@ -23,11 +25,10 @@ class _DepartmentListScreenState extends State<DepartmentListScreen> {
     setState(() => _query = query.trim().toLowerCase());
   }
 
-  // Departments come live from Firestore (the same data the admin manages).
+  // Departments come live from Firestore
   List<Department> _visibleDepartments() {
     return AppdataStore().departments.where((dept) {
-      if (_hideInactiveDepartments &&
-          dept.status.toLowerCase() != 'active') {
+      if (_hideInactiveDepartments && dept.status.toLowerCase() != 'active') {
         return false;
       }
       return dept.name.toLowerCase().contains(_query);
@@ -42,182 +43,184 @@ class _DepartmentListScreenState extends State<DepartmentListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          const BackgroundBlobs(),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(
-                          Icons.arrow_back,
-                          color: AppColors.textDark,
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        bottomNavigationBar: const AppBottomNav(currentIndex: 1),
+        body: Stack(
+          children: [
+            const BackgroundBlobs(),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 14),
+                    Row(
+                      children: const [
+                        Expanded(
+                          child: Text(
+                            'Select Department',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-
-                  const Text(
-                    'Select Department',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Choose a department to see available doctors',
-                    style: TextStyle(fontSize: 13.5, color: AppColors.textGrey),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Search bar
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: .06),
-                          blurRadius: 14,
-                          offset: const Offset(0, 4),
-                        ),
+                        NotificationBell(),
                       ],
                     ),
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: _onSearchChanged,
-                      style: const TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w500,
+                    const SizedBox(height: 6),
+                    Text(
+                      'Choose a department to see available doctors',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: AppColors.textGrey,
                       ),
-                      decoration: InputDecoration(
-                        hintText: 'Search department...',
-                        hintStyle: TextStyle(
-                          color: AppColors.textGrey.withValues(alpha: .7),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Search bar
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: .06),
+                            blurRadius: 14,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        style: const TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w500,
                         ),
-                        prefixIcon: const Icon(
-                          Icons.search_rounded,
-                          color: AppColors.primary,
-                        ),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.close_rounded,
-                                  size: 18,
-                                  color: AppColors.textGrey,
-                                ),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  _onSearchChanged('');
-                                },
-                              )
-                            : null,
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 14,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
+                        decoration: InputDecoration(
+                          hintText: 'Search department...',
+                          hintStyle: TextStyle(
+                            color: AppColors.textGrey.withValues(alpha: .7),
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search_rounded,
                             color: AppColors.primary,
-                            width: 1.4,
+                          ),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                    color: AppColors.textGrey,
+                                  ),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _onSearchChanged('');
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: AppColors.primary,
+                              width: 1.4,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 22),
+                    const SizedBox(height: 22),
 
-                  // Department grid. ListenableBuilder rebuilds it whenever
-                  // the store changes (e.g. the admin adds a department or
-                  // changes its picture).
-                  Expanded(
-                    child: ListenableBuilder(
-                      listenable: AppdataStore(),
-                      builder: (context, _) {
-                                  if (!AppdataStore().doctorsLoaded) {
-                              return const LoadingOrOffline(
-                                message: "Loading doctors...",
-                              );
-                            
-}
-                        final departments = _visibleDepartments();
-
-                        if (departments.isEmpty) {
-                          return Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.search_off_rounded,
-                                  size: 48,
-                                  color: AppColors.textGrey.withValues(
-                                    alpha: .5,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'No department found',
-                                  style: TextStyle(color: AppColors.textGrey),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        return GridView.builder(
-                          padding: const EdgeInsets.only(bottom: 20),
-                          itemCount: departments.length,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 16,
-                                mainAxisSpacing: 16,
-                                childAspectRatio: 1.05,
-                              ),
-                          itemBuilder: (context, index) {
-                            final dept = departments[index];
-                            return _DepartmentCard(
-                              department: dept,
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        DoctorListScreen(department: dept),
-                                  ),
-                                );
-                              },
+                    // Department grid
+                    Expanded(
+                      child: ListenableBuilder(
+                        listenable: AppdataStore(),
+                        builder: (context, _) {
+                          if (!AppdataStore().doctorsLoaded) {
+                            return const LoadingOrOffline(
+                              message: "Loading doctors...",
                             );
-                          },
-                        );
-                      },
+                          }
+                          final departments = _visibleDepartments();
+
+                          if (departments.isEmpty) {
+                            return Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.search_off_rounded,
+                                    size: 48,
+                                    color: AppColors.textGrey.withValues(
+                                      alpha: .5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No department found',
+                                    style: TextStyle(color: AppColors.textGrey),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          return GridView.builder(
+                            padding: const EdgeInsets.only(bottom: 20),
+                            itemCount: departments.length,
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 1.05,
+                                ),
+                            itemBuilder: (context, index) {
+                              final dept = departments[index];
+                              return _DepartmentCard(
+                                department: dept,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          DoctorListScreen(department: dept),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
