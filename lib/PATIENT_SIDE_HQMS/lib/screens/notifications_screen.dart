@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
+import '../widgets/app_back_button.dart';
 
 enum NotificationType { queue, turn, doctor, system }
 
@@ -24,6 +25,11 @@ class AppNotification {
 
 ///dummy data
 class NotificationStore extends ChangeNotifier {
+  void clearAll() {
+    items.clear();
+    notifyListeners();
+  }
+
   NotificationStore._();
   static final NotificationStore instance = NotificationStore._();
 
@@ -105,24 +111,66 @@ class NotificationsScreen extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(
-                              Icons.arrow_back,
-                              color: AppColors.textDark,
-                            ),
-                          ),
+                          const AppBackButton(),
                           const Spacer(),
                           if (store.unread > 0)
                             TextButton(
                               onPressed: store.markAllRead,
                               child: const Text(
-                                'Mark all as read',
+                                'Mark all read',
                                 style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          if (store.items.isNotEmpty)
+                            TextButton.icon(
+                              onPressed: () async {
+                                final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    backgroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(22),
+                                    ),
+                                    title: const Text(
+                                      'Clear all notifications?',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    content: const Text(
+                                      'This will remove all your notifications.',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: AppColors.error,
+                                        ),
+                                        child: const Text('Clear'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (ok == true) store.clearAll();
+                              },
+                              icon: const Icon(
+                                Icons.delete_sweep_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('Clear all'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.error,
                               ),
                             ),
                         ],
                       ),
+                      const SizedBox(height: 12),
                       const Text(
                         'Notifications',
                         style: TextStyle(
@@ -198,8 +246,14 @@ class _NotificationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (IconData icon, Color color) = switch (n.type) {
-      NotificationType.turn => (Icons.notifications_active_rounded, Colors.orange),
-      NotificationType.queue => (Icons.confirmation_number_rounded, AppColors.primary),
+      NotificationType.turn => (
+        Icons.notifications_active_rounded,
+        Colors.orange,
+      ),
+      NotificationType.queue => (
+        Icons.confirmation_number_rounded,
+        AppColors.primary,
+      ),
       NotificationType.doctor => (Icons.medical_services_rounded, Colors.teal),
       NotificationType.system => (Icons.verified_user_rounded, Colors.blueGrey),
     };
@@ -209,7 +263,9 @@ class _NotificationCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: n.read ? Colors.white : AppColors.primary.withValues(alpha: .05),
+          color: n.read
+              ? Colors.white
+              : AppColors.primary.withValues(alpha: .05),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: n.read
@@ -248,8 +304,9 @@ class _NotificationCard extends StatelessWidget {
                           n.title,
                           style: TextStyle(
                             fontSize: 14.5,
-                            fontWeight:
-                                n.read ? FontWeight.w600 : FontWeight.w800,
+                            fontWeight: n.read
+                                ? FontWeight.w600
+                                : FontWeight.w800,
                             color: AppColors.textDark,
                           ),
                         ),
@@ -305,8 +362,10 @@ class _Empty extends StatelessWidget {
             color: AppColors.textGrey.withValues(alpha: .5),
           ),
           const SizedBox(height: 12),
-          Text('No notifications yet',
-              style: TextStyle(color: AppColors.textGrey)),
+          Text(
+            'No notifications yet',
+            style: TextStyle(color: AppColors.textGrey),
+          ),
         ],
       ),
     );

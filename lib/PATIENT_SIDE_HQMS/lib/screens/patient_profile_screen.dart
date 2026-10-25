@@ -412,16 +412,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                               ),
                             ),
                           ),
-                          _Tile(
-                            icon: Icons.info_outline_rounded,
-                            title: 'About',
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => showAboutDialog(
-                              context: context,
-                              applicationName: 'MediQueue',
-                              applicationVersion: '1.0.0',
-                            ),
-                          ),
+                        
                         ],
                       ),
                       const SizedBox(height: 26),

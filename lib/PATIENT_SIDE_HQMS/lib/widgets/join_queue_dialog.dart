@@ -63,8 +63,8 @@ class _JoinQueueDialog extends StatelessWidget {
               children: [
                 // ---- Icon ----
                 Container(
-                  width: 68,
-                  height: 68,
+                  width: 60,
+                  height: 60,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: const LinearGradient(
@@ -90,84 +90,23 @@ class _JoinQueueDialog extends StatelessWidget {
                 const Text(
                   'Join Queue?',
                   style: TextStyle(
-                    fontSize: 22,
+                    fontSize: 18,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textDark,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   'Please confirm to get your token',
                   style: TextStyle(fontSize: 13, color: AppColors.textGrey),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 15),
 
-                // ---- Doctor row ----
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: AppColors.cardBorder),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.gradientStart,
-                              AppColors.gradientEnd,
-                            ],
-                          ),
-                        ),
-                        child: ClipOval(
-                          child: DoctorPhoto(
-                            doctor: doctor,
-                            width: 46,
-                            height: 46,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              doctor.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              doctor.specialization,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: AppColors.textGrey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
 
                 // ---- Position card ----
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  padding: const EdgeInsets.symmetric(vertical: 15),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
                     gradient: LinearGradient(
@@ -201,7 +140,7 @@ class _JoinQueueDialog extends StatelessWidget {
                       Text(
                         '#$position',
                         style: const TextStyle(
-                          fontSize: 42,
+                          fontSize: 38,
                           fontWeight: FontWeight.w900,
                           color: Colors.white,
                           height: 1.1,
@@ -223,27 +162,6 @@ class _JoinQueueDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
 
-                // ---- Wait + fee mini row ----
-                Row(
-                  children: [
-                    Expanded(
-                      child: _MiniInfo(
-                        icon: Icons.timer_outlined,
-                        label: 'Est. wait',
-                        value: doctor.estimatedWaitTime,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _MiniInfo(
-                        icon: Icons.payments_outlined,
-                        label: 'Fee',
-                        value: doctor.consultationFee,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 22),
 
                 // ---- Buttons ----
                 Row(
@@ -320,57 +238,6 @@ class _JoinQueueDialog extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _MiniInfo extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  const _MiniInfo({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: .06),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: AppColors.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 11, color: AppColors.textGrey),
-                ),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

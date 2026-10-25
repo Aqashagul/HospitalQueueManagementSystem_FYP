@@ -9,6 +9,7 @@ import '../widgets/premium_button.dart';
 import 'department_list_screen.dart';
 import 'track_queue_screen.dart';
 import '../widgets/app_back_button.dart';
+import '../widgets/notice_card.dart';
 
 class QueueSuccessScreen extends StatefulWidget {
   final Doctor doctor;
@@ -143,8 +144,8 @@ class _QueueSuccessScreenState extends State<QueueSuccessScreen>
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-    if (!didPop) _goHome();
-  },
+        if (!didPop) _goHome();
+      },
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: Stack(
@@ -154,11 +155,11 @@ class _QueueSuccessScreenState extends State<QueueSuccessScreen>
               child: Column(
                 children: [
                   Padding(
-  padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-  child: Row(
-    children: [AppBackButton(onTap: _goHome)],
-  ),
-),
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                    child: Row(
+                      children: [AppBackButton(onTap: _goHome)],
+                    ),
+                  ),
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(22, 24, 22, 16),
@@ -254,7 +255,7 @@ class _QueueSuccessScreenState extends State<QueueSuccessScreen>
                           ),
                           const SizedBox(height: 26),
 
-                          // ---- Ticket ----
+                          // ---- Ticket (no card) ----
                           _reveal(
                             _ticketIn,
                             _TicketCard(
@@ -266,66 +267,18 @@ class _QueueSuccessScreenState extends State<QueueSuccessScreen>
                               wait: _formatWait(waitMinutes),
                             ),
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 22),
 
                           // ---- Tip ----
                           _reveal(
                             _tipIn,
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: .07),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: AppColors.primary.withValues(alpha: .15),
-                                ),
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary,
-                                      borderRadius: BorderRadius.circular(13),
-                                    ),
-                                    child: const Icon(
-                                      Icons.notifications_active_rounded,
-                                      color: Colors.white,
-                                      size: 21,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Stay Updated!',
-                                          style: TextStyle(
-                                            fontSize: 14.5,
-                                            fontWeight: FontWeight.w800,
-                                            color: AppColors.textDark,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'We will notify you when your turn is near. '
-                                          'Please arrive at least 5 minutes before your '
-                                          'estimated consultation time.',
-                                          style: TextStyle(
-                                            fontSize: 12.5,
-                                            height: 1.45,
-                                            color: AppColors.textGrey,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            const NoticeCard(
+                              icon: Icons.notifications_active_rounded,
+                              title: 'Stay Updated!',
+                              message:
+                                  'You will receive a notification when your turn is near. '
+                                  'Please arrive at least 5 minutes before your estimated '
+                                  'consultation time.',
                             ),
                           ),
                         ],
@@ -379,6 +332,8 @@ class _QueueSuccessScreenState extends State<QueueSuccessScreen>
 }
 
 // ---------------------------------------------------------------------------
+// Token block: no card, big gradient token on the page itself.
+// ---------------------------------------------------------------------------
 
 class _TicketCard extends StatelessWidget {
   final Doctor doctor;
@@ -399,210 +354,160 @@ class _TicketCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: .22),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: Column(
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // ---- Gradient top ----
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.gradientStart, AppColors.gradientEnd],
-                ),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.confirmation_number_rounded,
-                        size: 15,
-                        color: Colors.white.withValues(alpha: .85),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'YOUR TOKEN NUMBER',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          letterSpacing: 1.4,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white.withValues(alpha: .85),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: token));
-                      HapticFeedback.selectionClick();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Token copied'),
-                          behavior: SnackBarBehavior.floating,
-                          backgroundColor: AppColors.primary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          duration: const Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          token,
-                          style: const TextStyle(
-                            fontSize: 46,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                            color: Colors.white,
-                            height: 1.1,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Icon(
-                          Icons.copy_rounded,
-                          size: 18,
-                          color: Colors.white.withValues(alpha: .7),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .18),
-                      borderRadius: BorderRadius.circular(40),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(1.5),
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                          ),
-                          child: ClipOval(
-                            child: DoctorPhoto(
-                              doctor: doctor,
-                              width: 28,
-                              height: 28,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            doctorName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            Icon(
+              Icons.confirmation_number_rounded,
+              size: 15,
+              color: AppColors.primary.withValues(alpha: .8),
             ),
-
-            // ---- Dashed tear line ----
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: LayoutBuilder(
-                builder: (context, c) {
-                  final dashes = (c.maxWidth / 10).floor();
-                  return SizedBox(
-                    height: 1,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: List.generate(
-                        dashes,
-                        (_) => Container(
-                          width: 5,
-                          height: 1,
-                          color: AppColors.cardBorder,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            // ---- White stats ----
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
-              child: IntrinsicHeight(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _TicketStat(
-                        icon: Icons.groups_2_rounded,
-                        value: '$patientsAhead',
-                        label: 'Patients Ahead',
-                      ),
-                    ),
-                    VerticalDivider(
-                      width: 1,
-                      color: AppColors.cardBorder,
-                      thickness: 1,
-                    ),
-                    Expanded(
-                      child: _TicketStat(
-                        icon: Icons.timer_outlined,
-                        value: wait,
-                        label: 'Est. Wait',
-                      ),
-                    ),
-                    VerticalDivider(
-                      width: 1,
-                      color: AppColors.cardBorder,
-                      thickness: 1,
-                    ),
-                    Expanded(
-                      child: _TicketStat(
-                        icon: Icons.local_hospital_rounded,
-                        value: department,
-                        label: 'Department',
-                      ),
-                    ),
-                  ],
-                ),
+            const SizedBox(width: 6),
+            Text(
+              'YOUR TOKEN NUMBER',
+              style: TextStyle(
+                fontSize: 11.5,
+                letterSpacing: 1.6,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary.withValues(alpha: .8),
               ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 6),
+        GestureDetector(
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: token));
+            HapticFeedback.selectionClick();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Token copied'),
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                duration: const Duration(seconds: 1),
+              ),
+            );
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ShaderMask(
+                shaderCallback: (rect) => const LinearGradient(
+                  colors: [AppColors.gradientStart, AppColors.gradientEnd],
+                ).createShader(rect),
+                child: Text(
+                  token,
+                  style: const TextStyle(
+                    fontSize: 64,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 3,
+                    color: Colors.white, // replaced by the gradient
+                    height: 1.15,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(
+                Icons.copy_rounded,
+                size: 18,
+                color: AppColors.textGrey.withValues(alpha: .7),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: .08),
+            borderRadius: BorderRadius.circular(40),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipOval(
+                child: DoctorPhoto(doctor: doctor, width: 26, height: 26),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  doctorName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+
+        // dashed line
+        LayoutBuilder(
+          builder: (context, c) {
+            final dashes = (c.maxWidth / 10).floor();
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: List.generate(
+                dashes,
+                (_) => Container(
+                  width: 5,
+                  height: 1.2,
+                  color: AppColors.primary.withValues(alpha: .25),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 18),
+
+        IntrinsicHeight(
+          child: Row(
+            children: [
+              Expanded(
+                child: _TicketStat(
+                  icon: Icons.groups_2_rounded,
+                  value: '$patientsAhead',
+                  label: 'Patients Ahead',
+                ),
+              ),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: AppColors.primary.withValues(alpha: .15),
+              ),
+              Expanded(
+                child: _TicketStat(
+                  icon: Icons.timer_outlined,
+                  value: wait,
+                  label: 'Est. Wait',
+                ),
+              ),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: AppColors.primary.withValues(alpha: .15),
+              ),
+              Expanded(
+                child: _TicketStat(
+                  icon: Icons.local_hospital_rounded,
+                  value: department,
+                  label: 'Department',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

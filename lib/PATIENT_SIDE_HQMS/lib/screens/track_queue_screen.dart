@@ -5,11 +5,11 @@ import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/queue_serv
 import '../models/doctor.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
+import '../widgets/doctor_mini_card.dart';
 import '../widgets/leave_queue_dialog.dart';
 import '../widgets/queue_entry_missing_view.dart';
 import '../widgets/queue_number_progress_card.dart';
 import '../widgets/track_bottom_bar.dart';
-import '../widgets/track_doctor_card.dart';
 import '../widgets/track_header.dart';
 import '../widgets/track_stats_row.dart';
 import '../widgets/track_status_hero_card.dart';
@@ -194,6 +194,19 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
                             children: [
                               TrackHeader(onBack: _goHome),
                               const SizedBox(height: 18),
+
+                              // 1. Doctor card (original gradient card)
+                              DoctorMiniCard(doctor: widget.doctor),
+                              const SizedBox(height: 18),
+
+                              // 2. Queue progress (your original widget)
+                              QueueNumberProgress(
+                                totalInQueue: initial + 1,
+                                currentPosition: position,
+                              ),
+                              const SizedBox(height: 18),
+
+                              // 3. Token / position card
                               TrackStatusHeroCard(
                                 myTurn: myTurn,
                                 done: done,
@@ -201,8 +214,8 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
                                 ahead: ahead,
                               ),
                               const SizedBox(height: 16),
-                              TrackDoctorCard(doctor: widget.doctor),
-                              const SizedBox(height: 14),
+
+                              // 4. Your Token, Now Serving, Est. Wait
                               TrackStatsRow(
                                 yourToken: myToken,
                                 nowServing: nowServingToken,
@@ -211,11 +224,7 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
                                     : _formatWait(remainingMinutes),
                               ),
                               const SizedBox(height: 14),
-                              QueueNumberProgress(
-                                totalInQueue: initial + 1,
-                                currentPosition: position,
-                              ),
-                              const SizedBox(height: 14),
+
                               TurnAlertsCard(
                                 value: _notifyEnabled,
                                 onChanged: (v) =>

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../utils/app_theme.dart';
-import 'app_card_decoration.dart';
+import 'gradient_stat_card.dart';
 
-/// Row of 3 tiles: Your Token, Now Serving, Est. Wait.
+/// Row of 3 gradient cards: Your Token, Now Serving, Est. Wait.
+/// Same look as the 3 cards on the doctor detail screen.
 class TrackStatsRow extends StatelessWidget {
   final String yourToken;
   final String nowServing;
@@ -15,92 +15,59 @@ class TrackStatsRow extends StatelessWidget {
     required this.estWait,
   });
 
+  LinearGradient _grad(Color a, Color b, Color c) => LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          a.withValues(alpha: 0.80),
+          b.withValues(alpha: 0.80),
+          c.withValues(alpha: 0.80),
+        ],
+      );
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: _StatTile(
+          child: GradientStatCard(
             icon: Icons.confirmation_number_rounded,
-            value: yourToken,
             label: 'Your Token',
-            color: AppColors.primary,
+            value: yourToken,
+            gradient: _grad(
+              const Color.fromARGB(255, 106, 183, 183),
+              const Color.fromARGB(255, 121, 170, 173),
+              const Color.fromARGB(255, 199, 141, 230),
+            ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _StatTile(
+          child: GradientStatCard(
             icon: Icons.record_voice_over_rounded,
-            value: nowServing,
             label: 'Now Serving',
-            color: Colors.teal,
+            value: nowServing,
+            gradient: _grad(
+              const Color.fromARGB(255, 200, 183, 211),
+              const Color.fromARGB(255, 138, 97, 169),
+              const Color.fromARGB(255, 27, 113, 193),
+            ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _StatTile(
+          child: GradientStatCard(
             icon: Icons.timer_outlined,
-            value: estWait,
             label: 'Est. Wait',
-            color: Colors.orange.shade700,
+            value: estWait,
+            gradient: _grad(
+              const Color.fromARGB(255, 106, 183, 183),
+              const Color.fromARGB(255, 121, 170, 173),
+              const Color.fromARGB(255, 199, 141, 230),
+            ),
           ),
         ),
       ],
-    );
-  }
-}
-
-class _StatTile extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-  final Color color;
-
-  const _StatTile({
-    required this.icon,
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-      decoration: appCardDecoration(),
-      child: Column(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(height: 9),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textDark,
-              ),
-            ),
-          ),
-          const SizedBox(height: 3),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 11.5, color: AppColors.textGrey),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
