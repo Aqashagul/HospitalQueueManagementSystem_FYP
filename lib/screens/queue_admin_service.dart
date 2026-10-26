@@ -1,8 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 
 class QueueAdminService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  /// Who did the last action and when (saved on the queue entry).
+  Map<String, dynamic> get _actor => {
+        'lastActionBy': FirebaseAuth.instance.currentUser?.uid,
+        'lastActionAt': FieldValue.serverTimestamp(),
+      };
 
   /// Day key like "20261014". Same format the patient app writes.
   static String dayKeyOf(DateTime d) =>
@@ -149,6 +156,7 @@ class QueueAdminService {
       tx.update(ref, {
         'status': 'In Consultation',
         'calledAt': FieldValue.serverTimestamp(),
+        ..._actor,
       });
     });
   }
@@ -171,6 +179,7 @@ class QueueAdminService {
       tx.update(ref, {
         'status': 'Completed',
         'completedAt': FieldValue.serverTimestamp(),
+        ..._actor,
       });
     });
   }
@@ -198,8 +207,8 @@ class QueueAdminService {
       }
       final seqA = sa.data()?['seq'];
       final seqB = sb.data()?['seq'];
-      tx.update(a, {'seq': seqB});
-      tx.update(b, {'seq': seqA});
+      tx.update(a, {'seq': seqB, ..._actor});
+      tx.update(b, {'seq': seqA, ..._actor});
     });
   }
 

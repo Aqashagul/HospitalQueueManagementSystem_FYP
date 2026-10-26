@@ -119,8 +119,8 @@ Future<NotifyResult> sendPatientNotification(
           body: jsonEncode({
             'entryId': entryId,
             'type': type,
-            if (patientId != null) 'patientId': patientId,
-            if (token != null) 'token': token,
+            'patientId': ?patientId,
+            'token': ?token,
           }),
         )
         .timeout(const Duration(seconds: 15));

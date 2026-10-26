@@ -6,8 +6,7 @@ class AppColors {
 
   static const Color iconPrimary = Color.fromARGB(255, 234, 234, 235);
   static const Color iconColor = Color.fromARGB(255, 24, 24, 24);
-   static const Color sidebarText = Color.fromARGB(255, 57, 56, 56);
-
+  static const Color sidebarText = Color.fromARGB(255, 57, 56, 56);
 
   static const Color bgColor = Color.fromARGB(255, 243, 243, 243);
 
@@ -53,6 +52,6 @@ class AppColors {
   // Very light purple
   static const Color palePurple = Color(0xFFE0D6F0);
 
-
-  
+  static const Color textPrimary = Color(0xFF1F2937);
+  static const Color textSecondary = Color(0xFF6B7280);
 }

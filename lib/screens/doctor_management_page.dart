@@ -18,7 +18,6 @@ import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dar
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
 import 'dart:async';
 
-
 class DoctorManagementPage extends StatefulWidget {
   const DoctorManagementPage({super.key});
 
@@ -104,6 +103,19 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
         SnackBar(
           content: Text(message),
           backgroundColor: Colors.red.shade700,
+        ),
+      );
+  }
+
+  // Green snackbar: something worked.
+  void _showInfoSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: const Color(0xFF2E7D32),
         ),
       );
   }
@@ -230,8 +242,331 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // ACCOUNT SETUP / ACCESS CONTROL
+  // ---------------------------------------------------------------------------
+
+  // 'none'    -> no setup link sent yet
+  // 'invited' -> setup link sent, doctor has not logged in yet
+  // 'active'  -> doctor has an account and can use the app
+  // 'revoked' -> admin cancelled the setup / took access back
+  String _loginStatus(DoctorModel doc) => doc.accessStatus;
+
+  String _loginStatusLabel(DoctorModel doc) {
+    switch (_loginStatus(doc)) {
+      case 'invited':
+        return 'Setup pending';
+      case 'active':
+        return 'Active';
+      case 'revoked':
+        return 'Access revoked';
+      default:
+        return 'Not set up';
+    }
+  }
+
+  // The first icon in the Actions column. Its look shows the current status.
+  Widget _inviteIcon(DoctorModel doc) {
+    final String s = _loginStatus(doc);
+    final IconData icon;
+    final Color color;
+    final String tip;
+    switch (s) {
+      case 'invited':
+        icon = Icons.mark_email_unread_outlined;
+        color = Colors.orange.shade700;
+        tip = 'Setup link sent (pending)';
+        break;
+      case 'active':
+        icon = Icons.mark_email_read_outlined;
+        color = const Color(0xFF2E7D32);
+        tip = 'Account active';
+        break;
+      case 'revoked':
+        icon = Icons.unsubscribe_outlined;
+        color = Colors.redAccent;
+        tip = 'Access revoked';
+        break;
+      default:
+        icon = Icons.forward_to_inbox_outlined;
+        color = Colors.grey.shade700;
+        tip = 'Send account setup link';
+    }
+    return Tooltip(
+      message: tip,
+      child: GestureDetector(
+        onTap: () => _openInvitationDialog(doc),
+        child: Icon(icon, size: 18, color: color),
+      ),
+    );
+  }
+
+  // No setup link yet -> email form. Otherwise -> manage dialog.
+  void _openInvitationDialog(DoctorModel doc) {
+    final String s = _loginStatus(doc);
+    if (s == 'none') {
+      _openSendInviteForm(doc);
+    } else {
+      _openManageAccessDialog(doc, s);
+    }
+  }
+
+  // Admin types the doctor's email and sends the account setup link.
+  void _openSendInviteForm(DoctorModel doc, {String? initialEmail}) {
+    showDialog(
+      context: context,
+      builder: (_) => AppFormDialog(
+        title: "Send Account Setup Link",
+        submitLabel: "Send Setup Link",
+        initialValues: {"email": initialEmail ?? doc.email ?? ""},
+        fields: const [
+          FormFieldConfig(
+            key: "email",
+            label: "Doctor's Work Email",
+            type: FieldType.text,
+            hint: "doctor@hospital.com",
+            required: true,
+            isEmail: true,
+          ),
+        ],
+        // The doctor gets an email and chooses their own password, so the
+        // admin never sees one. Errors (e.g. "This email is already
+        // registered.") are shown inside the dialog.
+        onSubmit: (values) async {
+          final String email = (values["email"] ?? "").toString().trim();
+          // Throws an Exception with a readable message when it fails
+          // (no internet, session expired, ...), which the dialog shows.
+          await AppdataStore().inviteDoctor(doc, email);
+          _showInfoSnack("Account setup link sent to $email");
+        },
+      ),
+    );
+  }
+
+  // Popup in the same style as the confirm popups: icon, title, message,
+  // doctor card and two buttons (Close + one main action). An optional red
+  // text button below can offer a second action.
+  // Returns 'primary', 'danger', or null when the popup was just closed.
+  Future<String?> _showAccessDialog(
+    DoctorModel doc, {
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String message,
+    required String infoSubtitle,
+    required String primaryLabel,
+    required Color primaryColor,
+    String? dangerLabel,
+  }) {
+    const Color red = Color(0xFFE53935);
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(12));
+
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color.withValues(alpha: .12),
+                  ),
+                  child: Icon(icon, size: 40, color: color),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                DialogInfoCard(
+                  badge: doc.department,
+                  title: doc.name,
+                  subtitle: infoSubtitle,
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.black87,
+                          side: BorderSide(color: Colors.grey.shade300),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: shape,
+                        ),
+                        child: const Text(
+                          'Close',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, 'primary'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: shape,
+                        ),
+                        child: Text(
+                          primaryLabel,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (dangerLabel != null) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, 'danger'),
+                    child: Text(
+                      dangerLabel,
+                      style: const TextStyle(
+                        color: red,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // After a setup link was sent: resend, cancel/revoke, or restore access.
+  Future<void> _openManageAccessDialog(DoctorModel doc, String status) async {
+    final bool revoked = status == 'revoked';
+    final bool invited = status == 'invited';
+    final String email = doc.email ?? '';
+    // The card under the message shows the email (or the specialization if
+    // this doctor has no email yet).
+    final String cardSubtitle = email.isNotEmpty ? email : doc.specialization;
+
+    final String? choice;
+    if (revoked) {
+      choice = await _showAccessDialog(
+        doc,
+        icon: Icons.block_rounded,
+        color: const Color(0xFFE53935),
+        title: 'Access Revoked',
+        message: '${doc.name} currently has no access and cannot open the app.',
+        infoSubtitle: cardSubtitle,
+        primaryLabel: 'Restore Access',
+        primaryColor: const Color(0xFF2E7D32),
+      );
+    } else if (invited) {
+      choice = await _showAccessDialog(
+        doc,
+        icon: Icons.mark_email_unread_outlined,
+        color: Colors.orange.shade700,
+        title: 'Setup Pending',
+        message: 'An account setup link has been sent. The doctor receives a '
+            '"Reset your password" email and chooses their own password from it.',
+        infoSubtitle: cardSubtitle,
+        primaryLabel: 'Resend Link',
+        primaryColor: AppColors.primaryPurple,
+        dangerLabel: 'Cancel Setup',
+      );
+    } else {
+      choice = await _showAccessDialog(
+        doc,
+        icon: Icons.verified_user_outlined,
+        color: const Color(0xFF2E7D32),
+        title: 'Account Active',
+        message: "${doc.name}'s account is active. If you revoke access, the "
+            'doctor will be signed out of the app immediately.',
+        infoSubtitle: cardSubtitle,
+        primaryLabel: 'Revoke Access',
+        primaryColor: const Color(0xFFE53935),
+      );
+    }
+    if (choice == null || !mounted) return;
+
+    if (revoked) {
+      try {
+        await AppdataStore().restoreDoctorAccess(doc);
+        _showInfoSnack(
+          doc.authUid != null
+              ? "Access restored for ${doc.name}"
+              : "Cancelled setup cleared. You can send a new setup link now.",
+        );
+      } catch (e) {
+        _showErrorSnack(_friendlyError(e));
+      }
+    } else if (invited && choice == 'primary') {
+      // The form is pre-filled with the email, so it can be changed there.
+      _openSendInviteForm(doc, initialEmail: doc.email);
+    } else {
+      await _confirmAndRevoke(doc, invited: invited);
+    }
+  }
+
+  // Asks for confirmation, then cancels the setup / revokes the access.
+  Future<void> _confirmAndRevoke(DoctorModel doc, {required bool invited}) async {
+    final bool ok = await showConfirmActionDialog(
+      context,
+      icon: Icons.block_rounded,
+      color: const Color(0xFFE53935),
+      title: invited ? 'Cancel Setup' : 'Revoke Access',
+      message: '${doc.name} will not be able to open the app. '
+          'You can give access back later.',
+      confirmLabel: invited ? 'Cancel Setup' : 'Revoke',
+      content: DialogInfoCard(
+        badge: doc.department,
+        title: doc.name,
+        subtitle: doc.specialization,
+      ),
+    );
+    if (!ok || !mounted) return;
+    try {
+      await AppdataStore().revokeDoctorAccess(doc);
+      _showInfoSnack("Access revoked for ${doc.name}");
+    } catch (e) {
+      _showErrorSnack(_friendlyError(e));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ADD / EDIT / VIEW
+  // ---------------------------------------------------------------------------
+
   // Opens the "Add New Doctor" form and saves the doctor to Firestore on
-  // submit. The list refreshes automatically via the listener.
+  // submit. No email here: the setup link is sent later from the first icon
+  // in the Actions column. The list refreshes automatically via the listener.
   void _openAddDoctorDialog() {
     if (AppdataStore().departments.isEmpty) {
       _showNoDepartmentDialog();
@@ -260,8 +595,8 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
           const FormFieldConfig(key: "tokenPrefix", label: "Token Prefix", type: FieldType.text, hint: "e.g. CD (leave blank for auto)"),
           const FormFieldConfig(key: "availability", label: "Availability", type: FieldType.pillSelector, options: ["Available", "Unavailable"]),
         ],
-        onSubmit: (values) {
-          AppdataStore().addDoctor(
+        onSubmit: (values) async {
+          await AppdataStore().addDoctor(
             DoctorModel(
               name: values["name"],
               specialization: values["specialization"],
@@ -276,13 +611,17 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
               fee: int.tryParse(values["fee"]?.toString() ?? "") ?? 0,
             ),
           );
+          _showInfoSnack(
+            "Doctor added. Use the ✉️ icon to send the account setup link.",
+          );
         },
       ),
     );
   }
 
   // Opens the "Edit Doctor" form pre-filled with the given doctor's data.
-  // Updates the same Firestore document (matched by id).
+  // Updates the same Firestore document (matched by id). Login / account setup
+  // is handled only by the setup icon, not here.
   void _openEditDoctorDialog(DoctorModel doc) {
     if (AppdataStore().departments.isEmpty) {
       _showNoDepartmentDialog();
@@ -323,8 +662,8 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
           const FormFieldConfig(key: "availability", label: "Availability", type: FieldType.pillSelector, options: ["Available", "Unavailable"]),
           const FormFieldConfig(key: "fee", label: "Doctor Fee", type: FieldType.text, hint: "e.g. 1500", isNumeric: true),
         ],
-        onSubmit: (values) {
-          AppdataStore().updateDoctor(
+        onSubmit: (values) async {
+          await AppdataStore().updateDoctor(
             DoctorModel(
               id: doc.id, // tells Firestore which document to update
               name: values["name"],
@@ -415,6 +754,18 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
             value: doc.tokenPrefix?.isNotEmpty == true ? doc.tokenPrefix! : "—",
             icon: Icons.confirmation_number_outlined,
             iconColor: const Color(0xFFC62828),
+          ),
+          DetailRow(
+            label: "Login Email",
+            value: doc.email ?? "—",
+            icon: Icons.alternate_email,
+            iconColor: const Color(0xFF3B82C4),
+          ),
+          DetailRow(
+            label: "Login Status",
+            value: _loginStatusLabel(doc),
+            icon: Icons.verified_user_outlined,
+            iconColor: const Color(0xFF2E7D32),
           ),
         ],
       ),
@@ -722,6 +1073,38 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
   }
 
   Widget _buildTable(List<DoctorModel> filteredDoctors, {required bool isMobile}) {
+        // No doctors at all: show a picture instead of the plain text.
+    // (If doctors exist but the search/filter finds none, the table's own
+    // "no results" text is used as before.)
+    if (AppdataStore().doctors.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/no_doc_yet.png',
+                width: isMobile ? 220 : 380,
+                fit: BoxFit.contain,
+                // Until the picture file is added, an icon is shown instead.
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.medical_services_outlined,
+                  size: 96,
+                  color: Colors.grey.shade300,
+                ),
+              ),
+              const SizedBox(height: 8),
+             /* Text(
+                "Add your first doctor to get started.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+              ),*/
+            ],
+          ),
+        ),
+      );
+    }
     final table = DataTableCard<DoctorModel>(
       items: filteredDoctors,
       emptyMessage: "No doctors added yet",
@@ -776,6 +1159,11 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
           flex: 2,
           cellBuilder: (doc) => Row(
             children: [
+              // Account setup / access control (first icon). Its colour shows
+              // the status: grey = not set up, orange = pending,
+              // green = active, red = revoked.
+              _inviteIcon(doc),
+              const SizedBox(width: 14),
               // View details
               GestureDetector(
                 onTap: () => _openViewDoctorDialog(doc),

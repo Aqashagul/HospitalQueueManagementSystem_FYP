@@ -22,6 +22,12 @@ class DoctorModel {
   final String? qualification;
   final String? tokenPrefix;
   final int fee;
+  final String? email; // doctor's login email (display only)
+  final String? authUid; // Firebase Auth uid of the doctor's login
+  // Admin-controlled access to the app: 'invited' | 'active' | 'revoked'
+  // (missing = never invited). Read only: it is changed by the invite /
+  // revoke buttons, never by the Edit Doctor form.
+  final String? loginStatus;
 
   const DoctorModel({
     this.id,
@@ -37,7 +43,14 @@ class DoctorModel {
     this.qualification,
     this.tokenPrefix,
     required this.fee,
+    this.email,
+    this.authUid,
+    this.loginStatus,
   });
+
+  /// 'none' | 'invited' | 'active' | 'revoked'
+  String get accessStatus =>
+      loginStatus ?? (authUid != null ? 'invited' : 'none');
 
   /// Builds a DoctorModel from a Firestore document.
   factory DoctorModel.fromMap(
@@ -59,6 +72,9 @@ class DoctorModel {
       qualification: map['qualification'] as String?,
       tokenPrefix: map['tokenPrefix'] as String?,
       fee: (map['fee'] as num?)?.toInt() ?? 0,
+      email: map['email'] as String?,
+      authUid: map['authUid'] as String?,
+      loginStatus: map['loginStatus'] as String?,
     );
   }
 
@@ -82,7 +98,9 @@ class DoctorModel {
       'qualification': qualification,
       'tokenPrefix': tokenPrefix,
       'fee': fee,
-      if (photoBase64 != null) 'photoBase64': photoBase64,
+      if (email != null) 'email': email,
+      if (authUid != null) 'authUid': authUid,
+      'photoBase64': ?photoBase64,
     };
   }
 }

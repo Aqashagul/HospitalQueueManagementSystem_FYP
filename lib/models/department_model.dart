@@ -56,7 +56,7 @@ class Department {
       'head': head,
       'status': status,
       'createdDate': createdDate,
-      if (photoBase64 != null) 'photoBase64': photoBase64,
+      'photoBase64': ?photoBase64,
     };
   }
 }

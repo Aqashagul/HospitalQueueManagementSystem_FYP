@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/doctor.dart';
 
-
 /// Result of joining a queue, used by the success and tracking screens.
 class JoinedQueueResult {
   final String entryId; // Firestore document id of the queue entry
@@ -89,8 +88,12 @@ class QueueService {
   /// never get the same token for the same doctor on the same day. The
   /// counter restarts every day (one counter per doctor per day).
   ///
-  /// Throws a [StateError] (with a readable message) if nobody is logged in
-  /// or the patient already has an active token.
+  /// The doctor must also be "Available" at the moment of joining. This is
+  /// checked on the server's copy of the doctor inside the transaction, so a
+  /// patient on a stale screen cannot join an unavailable (or deleted) doctor.
+  ///
+  /// Throws a [StateError] (with a readable message) if nobody is logged in,
+  /// the doctor is unavailable, or the patient already has an active token.
   Future<JoinedQueueResult> joinQueue(Doctor doctor) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -112,6 +115,7 @@ class QueueService {
       }
     }
 
+    final doctorRef = _db.collection('doctors').doc(doctor.id);
     final counterRef =
         _db.collection('queue_counters').doc('${doctor.id}_$dayKey');
     // Fixed id: one possible entry per patient + doctor + day.
@@ -123,6 +127,21 @@ class QueueService {
 
     final created = await _db.runTransaction<Map<String, dynamic>>((tx) async {
       // All reads first.
+
+      // The doctor must still exist and be available right now.
+      final doctorSnap = await tx.get(doctorRef);
+      if (!doctorSnap.exists) {
+        throw StateError('This doctor is no longer available.');
+      }
+      final doctorStatus =
+          (doctorSnap.data()?['status'] as String? ?? 'Available')
+              .toLowerCase();
+      if (doctorStatus != 'available') {
+        throw StateError(
+          '${doctor.name} is currently unavailable. Please try again later.',
+        );
+      }
+
       final entrySnap = await tx.get(entryRef);
       if (entrySnap.exists &&
           isActiveStatus(entrySnap.data()?['status']?.toString())) {

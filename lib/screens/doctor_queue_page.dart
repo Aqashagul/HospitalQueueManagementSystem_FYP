@@ -18,11 +18,20 @@ import 'package:queue_management_system/widgets/notify_report.dart';
 class DoctorQueueDetailPage extends StatefulWidget {
   final String doctorName;
   final String department;
+  final bool showBack; // false when a doctor uses this page
+  // Doctor mode: the doctor dashboard has its own top bar, so the old bar is
+  // hidden and one compact "Accepting patients" card is shown instead.
+  final bool doctorMode;
+  // Doctor mode: the availability switch, shown inside the status card.
+  final Widget? topBarTrailing;
 
   const DoctorQueueDetailPage({
     super.key,
     required this.doctorName,
     required this.department,
+    this.showBack = true,
+    this.topBarTrailing,
+    this.doctorMode = false,
   });
 
   @override
@@ -54,6 +63,11 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   // Ticks every 30 seconds so the "wait" time updates live on screen.
   Timer? _ticker;
 
+  // Admin screen only: when this doctor's own app last said "I am open"
+  // (doctor_presence/{doctorId}.lastSeen, written by the doctor dashboard).
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _presenceSub;
+  DateTime? _doctorLastSeen;
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +81,18 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       _loaded = true; // doctor not found: nothing to listen to
       return;
     }
+    if (!widget.doctorMode) {
+      _presenceSub = FirebaseFirestore.instance
+          .collection('doctor_presence')
+          .doc(id)
+          .snapshots()
+          .listen((snap) {
+        if (!mounted) return;
+        final v = snap.data()?['lastSeen'];
+        setState(() => _doctorLastSeen = v is Timestamp ? v.toDate() : null);
+      }, onError: (_) {});
+    }
+
     _sub = _service.watchTodaysEntriesForDoctor(id).listen(
       (snap) {
         if (!mounted) return;
@@ -90,6 +116,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   void dispose() {
     _ticker?.cancel();
     _sub?.cancel();
+    _presenceSub?.cancel();
     super.dispose();
   }
 
@@ -115,6 +142,45 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
 
   // Firestore id of this doctor (queue entries store it as doctorId).
   String? get _doctorId => doctor?.id;
+
+  // Admin screen only: true while the doctor's own app is open (it writes
+  // lastSeen every minute). The 30 second ticker above keeps this fresh.
+  bool get _doctorManagesNow =>
+      !widget.doctorMode &&
+      _doctorLastSeen != null &&
+      DateTime.now().difference(_doctorLastSeen!) < const Duration(minutes: 3);
+
+  // Adds the "doctor manages their own queue" line to a confirm popup.
+  String _withOwnerNote(String message) => _doctorManagesNow
+      ? '$message\n\nThis doctor manages their own queue. Continue?'
+      : message;
+
+  Widget _buildManagedByDoctorChip() {
+    const green = Color(0xFF2E7D32);
+    return Container(
+      margin: const EdgeInsets.only(left: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD4EDDA),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, size: 8, color: green),
+          SizedBox(width: 6),
+          Text(
+            'Doctor is managing this queue',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: green,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   // Red snackbar: the action itself failed.
   void _showSnack(String message) {
@@ -252,18 +318,22 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       backgroundColor: AppColors.bgPrimary,
       body: Column(
         children: [
-          // Top bar: back button + doctor name
+          // Top bar: back button + doctor name (admin only; a doctor has the
+          // top bar of the doctor dashboard instead)
+          if (!widget.doctorMode)
           Container(
             height: 64,
             color: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Icon(Icons.arrow_back, size: 22),
-                ),
-                const SizedBox(width: 16),
+                if (widget.showBack) ...[
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.arrow_back, size: 22),
+                  ),
+                  const SizedBox(width: 16),
+                ],
                 Expanded(
                   child: Text(
                     widget.doctorName,
@@ -274,6 +344,8 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                     ),
                   ),
                 ),
+                if (_doctorManagesNow) _buildManagedByDoctorChip(),
+                if (widget.topBarTrailing != null) widget.topBarTrailing!,
               ],
             ),
           ),
@@ -299,11 +371,18 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
 
                           // Original three-column layout:
                           // doctor panel | patient details | queue list
-                          return Row(
+                          final row = Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              SizedBox(width: 260, child: _buildDoctorPanel()),
-                              Container(width: 1, color: Colors.grey.shade300),
+                              // A doctor does not need their own photo and
+                              // name repeated here.
+                              if (!widget.doctorMode) ...[
+                                SizedBox(
+                                  width: 260,
+                                  child: _buildDoctorPanel(),
+                                ),
+                                Container(width: 1, color: Colors.grey.shade300),
+                              ],
 
                               Expanded(
                                 child: _buildPatientDetailsPanel(
@@ -318,6 +397,13 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
                               ),
                             ],
                           );
+                          if (!widget.doctorMode) return row;
+                          return Column(
+                            children: [
+                              _buildDoctorStatusCard(),
+                              Expanded(child: row),
+                            ],
+                          );
                         },
                       ),
           ),
@@ -327,6 +413,20 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   }
 
   Widget _buildMobileLayout() {
+    if (widget.doctorMode) {
+      return Column(
+        children: [
+          _buildDoctorStatusCard(),
+          _buildMobileToggle(),
+          Expanded(
+            child: _mobilePanelIndex == 0
+                ? _buildQueueListPanel(isMobile: true)
+                : _buildPatientDetailsPanel(isMobile: true),
+          ),
+        ],
+      );
+    }
+
     return Column(
       children: [
         _buildMobileDoctorStrip(),
@@ -339,6 +439,59 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
               : _buildPatientDetailsPanel(isMobile: true),
         ),
       ],
+    );
+  }
+
+  // Doctor mode: one compact status card instead of the old top bar and the
+  // repeated doctor name / photo / "Queue n" badge.
+  Widget _buildDoctorStatusCard() {
+    final bool available = doctor?.status.toLowerCase() == 'available';
+    final int waiting = waitingPatients.length;
+    final String waitingText =
+        waiting == 1 ? '1 patient waiting' : '$waiting patients waiting';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: available ? const Color(0xFF2E7D32) : Colors.grey.shade400,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  available ? 'Accepting patients' : 'Not accepting patients',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  waitingText,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          if (widget.topBarTrailing != null) widget.topBarTrailing!,
+        ],
+      ),
     );
   }
 
@@ -397,8 +550,8 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
   // (Queue list vs Patient details) currently occupies the screen.
   Widget _buildMobileToggle() {
     return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      color: widget.doctorMode ? Colors.transparent : Colors.white,
+      padding: EdgeInsets.fromLTRB(16, widget.doctorMode ? 8 : 0, 16, 12),
       child: Row(
         children: [
           Expanded(child: _buildMobileToggleButton(label: "Queue", index: 0)),
@@ -417,8 +570,13 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primaryPurple : Colors.grey.shade100,
+          color: isSelected
+              ? AppColors.primaryPurple
+              : (widget.doctorMode ? Colors.white : Colors.grey.shade100),
           borderRadius: BorderRadius.circular(10),
+          border: widget.doctorMode && !isSelected
+              ? Border.all(color: Colors.grey.shade200)
+              : null,
         ),
         child: Text(
           label,
@@ -502,6 +660,65 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
     );
   }
 
+  // Empty list. Admin keeps the old one-line text; a doctor gets a proper
+  // centered empty state.
+  Widget _buildEmptyState() {
+    if (!widget.doctorMode) {
+      return Center(
+        child: Text(
+          "No patients here",
+          style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+        ),
+      );
+    }
+
+    final bool waitingTab = selectedTabIndex == 0;
+    final bool someoneInRoom = waitingTab && currentPatient != null;
+
+    final IconData icon =
+        waitingTab ? Icons.task_alt_rounded : Icons.history_rounded;
+    final String title = !waitingTab
+        ? 'No completed visits yet'
+        : someoneInRoom
+            ? 'No one else is waiting'
+            : 'No patients waiting';
+    final String subtitle = !waitingTab
+        ? 'Patients you finish seeing today will appear here.'
+        : someoneInRoom
+            ? 'Open Details to see the patient in consultation.'
+            : "You're all caught up.";
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primaryPurple.withValues(alpha: .08),
+              ),
+              child: Icon(icon, size: 36, color: AppColors.primaryPurple),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // A single "Waiting"/"Completed" tab label with an underline when active.
   Widget _buildTab(String label, int index) {
     final bool isSelected = selectedTabIndex == index;
@@ -530,7 +747,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
           if (isSelected)
             Container(
               height: 2,
-              width: label.length * 6.0,
+              width: label.length * (widget.doctorMode ? 7.0 : 6.0),
               color: AppColors.primaryPurple,
             ),
         ],
@@ -551,23 +768,25 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
         children: [
           Row(
             children: [
-              _buildTab("Waiting", 0),
+              _buildTab(
+                widget.doctorMode
+                    ? "Waiting (${waitingPatients.length})"
+                    : "Waiting",
+                0,
+              ),
               const SizedBox(width: 20),
-              _buildTab("Completed", 1),
+              _buildTab(
+                widget.doctorMode
+                    ? "Completed (${completedPatients.length})"
+                    : "Completed",
+                1,
+              ),
             ],
           ),
           const Divider(height: 24),
           Expanded(
             child: activeList.isEmpty
-                ? Center(
-                    child: Text(
-                      "No patients here",
-                      style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 13,
-                      ),
-                    ),
-                  )
+                ? _buildEmptyState()
                 : ListView.builder(
                     itemCount: activeList.length,
                     itemBuilder: (context, index) {
@@ -990,8 +1209,9 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       icon: Icons.check_circle_outline_rounded,
       color: const Color(0xFF2E7D32),
       title: 'Complete Consultation',
-      message:
-          'Mark this consultation as completed? The patient will be notified.',
+      message: _withOwnerNote(
+        'Mark this consultation as completed? The patient will be notified.',
+      ),
       confirmLabel: 'Complete',
       token: shown?.token,
       patientName: shown?.patientName,
@@ -1036,8 +1256,9 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       icon: Icons.campaign_outlined,
       color: AppColors.primaryPurple,
       title: 'Call Patient',
-      message:
-          'Call this patient in to see ${widget.doctorName}? They will be notified.',
+      message: _withOwnerNote(
+        'Call this patient in to see ${widget.doctorName}? They will be notified.',
+      ),
       confirmLabel: 'Call Patient',
       token: patient.token,
       patientName: patient.patientName,
@@ -1075,8 +1296,9 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       icon: Icons.skip_next_rounded,
       color: Colors.blueGrey.shade500,
       title: 'Skip Patient',
-      message:
-          'Move this patient one place down the queue? They will be notified.',
+      message: _withOwnerNote(
+        'Move this patient one place down the queue? They will be notified.',
+      ),
       confirmLabel: 'Skip Patient',
       token: patient.token,
       patientName: patient.patientName,
@@ -1125,8 +1347,9 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       icon: Icons.cancel_outlined,
       color: const Color(0xFFE53935),
       title: 'Cancel Token',
-      message:
-          'This patient will be removed from the queue and notified. This cannot be undone.',
+      message: _withOwnerNote(
+        'This patient will be removed from the queue and notified. This cannot be undone.',
+      ),
       confirmLabel: 'Cancel Token',
       cancelLabel: 'Keep Token',
       token: patient.token,

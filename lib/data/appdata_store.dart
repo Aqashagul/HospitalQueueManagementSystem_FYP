@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:queue_management_system/DOCTOR/doctor_acess_api.dart';
 import 'package:queue_management_system/models/department_model.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
 import 'package:queue_management_system/models/patient_model.dart';
 import 'package:flutter/foundation.dart';
+import 'package:queue_management_system/screens/doctor_login_admin.dart';
 
 class AppdataStore extends ChangeNotifier {
   //Singleton class
@@ -169,6 +171,9 @@ class AppdataStore extends ChangeNotifier {
     final batch = _db.batch();
     for (final doc in doctorsSnap.docs) {
       batch.delete(doc.reference);
+      // Also remove the doctor's users/{uid} document, so the login is refused.
+      final uid = doc.data()['authUid'] as String?;
+      if (uid != null) batch.delete(_db.collection('users').doc(uid));
     }
     batch.delete(_db.collection('departments').doc(dept.id));
     await batch.commit();
@@ -181,8 +186,10 @@ class AppdataStore extends ChangeNotifier {
   // Filled automatically from Firestore (see startListening).
   final List<DoctorModel> doctors = [];
 
-  Future<void> addDoctor(DoctorModel doctor) {
-    return _db.collection('doctors').add({
+  /// Saves a new doctor WITHOUT a login. The account can be set up later
+  /// from the first (✉️) icon in the doctors table, see [inviteDoctor].
+  Future<void> addDoctor(DoctorModel doctor) async {
+    await _db.collection('doctors').doc().set({
       ...doctor.toMap(),
       // Server time, used to show the newest doctor first.
       'createdAt': FieldValue.serverTimestamp(),
@@ -194,9 +201,85 @@ class AppdataStore extends ChangeNotifier {
     await _db.collection('doctors').doc(doctor.id).update(doctor.toMap());
   }
 
+  /// Sends the doctor an account setup link (or sends it AGAIN).
+  ///
+  /// The Worker creates (or switches on again) the doctor's login with a random
+  /// password that nobody sees, saves the email and status on the doctor, and
+  /// Firebase emails the doctor a link to choose their own password.
+  ///
+  /// Throws an Exception with a readable message when it fails.
+  Future<void> inviteDoctor(DoctorModel doctor, String email) async {
+    if (doctor.id == null) return;
+
+    final bool emailSent = await DoctorAccessApi.invite(doctor.id!, email);
+    if (!emailSent) {
+      throw Exception(
+        'The login was created, but the setup email could not be sent. '
+        'You can send the setup link again, or the doctor can tap '
+        '"Forgot password?" on the login screen to get a link.',
+      );
+    }
+  }
+
+  /// Cancels a pending account setup, or takes access back from a doctor that is
+  /// already using the app. The Firebase login is switched off and the doctor
+  /// is logged out of every device.
+  Future<void> revokeDoctorAccess(DoctorModel doctor) async {
+    if (doctor.id == null) return;
+    await DoctorAccessApi.revoke(doctor.id!);
+  }
+
+  /// Undoes [revokeDoctorAccess].
+  ///
+  /// - A doctor who was using the app gets access back straight away.
+  /// - A cancelled setup is cleared, so the admin can send a new link.
+  Future<void> restoreDoctorAccess(DoctorModel doctor) async {
+    if (doctor.id == null) return;
+    await DoctorAccessApi.restore(doctor.id!);
+  }
+
+  /// Changes the email and/or password of a doctor that already has a login.
+  /// Goes through the Cloudflare Worker (Firebase admin rights are needed).
+  Future<void> updateDoctorLogin(
+    DoctorModel doctor, {
+    String? email,
+    String? password,
+  }) async {
+    if (doctor.id == null || doctor.authUid == null) return;
+
+    await DoctorLoginAdmin.update(
+      doctor.authUid!,
+      email: email,
+      password: password,
+    );
+    // Keep the email shown in the admin list in step with the real login.
+    if (email != null) {
+      await _db.collection('doctors').doc(doctor.id).update({
+        'email': email.trim(),
+      });
+    }
+  }
+
   Future<void> removeDoctor(DoctorModel doctor) async {
     if (doctor.id == null) return;
-    await _db.collection('doctors').doc(doctor.id).delete();
+
+    // Delete the doctor's login too, so the same email can be used again.
+    // Best effort: a failure here must not stop the doctor from being deleted.
+    if (doctor.authUid != null) {
+      try {
+        await DoctorAccessApi.deleteLogin(doctor.authUid!);
+      } catch (e) {
+        debugPrint('Could not delete the doctor login: $e');
+      }
+    }
+
+    final batch = _db.batch();
+    batch.delete(_db.collection('doctors').doc(doctor.id));
+    // Without users/{uid} the doctor's login is refused by the role check.
+    if (doctor.authUid != null) {
+      batch.delete(_db.collection('users').doc(doctor.authUid));
+    }
+    await batch.commit();
   }
 
   /// TEMPORARY: uploads the old dummy doctors once, only if the
@@ -623,6 +706,7 @@ class AppdataStore extends ChangeNotifier {
       status: "Waiting",
       registrationTime: DateTime.now().subtract(const Duration(minutes: 22)),
     ),
+
     PatientModel(
       token: "I-003",
       name: "Anum",

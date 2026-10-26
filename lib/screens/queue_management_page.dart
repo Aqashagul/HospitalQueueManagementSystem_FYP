@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/call_patient.dart';
@@ -14,6 +16,9 @@ import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
 import 'package:queue_management_system/widgets/resuable/rounded_card.dart';
+
+
+
 
 class QueueManagementPage extends StatefulWidget {
   const QueueManagementPage({super.key});
@@ -33,12 +38,36 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
   // Doctor whose action (Call Next / Complete) is currently running.
   String? _busyDoctorName;
 
+  // doctor_presence: when each doctor's own app last said "I am open"
+  // (written by the doctor dashboard every minute).
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _presenceSub;
+  Timer? _presenceTicker;
+  final Map<String, DateTime> _lastSeen = {};
+
   @override
   void initState() {
     super.initState();
     _stream = _service.watchTodaysEntries();
     // Doctors/departments come from the store; refresh when they change.
     AppdataStore().addListener(_onStoreChanged);
+
+    _presenceSub = FirebaseFirestore.instance
+        .collection('doctor_presence')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      setState(() {
+        _lastSeen.clear();
+        for (final d in snap.docs) {
+          final v = d.data()['lastSeen'];
+          if (v is Timestamp) _lastSeen[d.id] = v.toDate();
+        }
+      });
+    }, onError: (_) {});
+    // A doctor who closed the app drops off after a few minutes.
+    _presenceTicker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _onStoreChanged() {
@@ -48,6 +77,8 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
 
   @override
   void dispose() {
+    _presenceSub?.cancel();
+    _presenceTicker?.cancel();
     AppdataStore().removeListener(_onStoreChanged);
     super.dispose();
   }
@@ -59,6 +90,14 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
       ..showSnackBar(
         SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
       );
+  }
+
+  // True while the doctor's own app is open (seen in the last 3 minutes).
+  bool _isDoctorOnline(String doctorName) {
+    final id = _doctorIdFor(doctorName);
+    final seen = id == null ? null : _lastSeen[id];
+    return seen != null &&
+        DateTime.now().difference(seen) < const Duration(minutes: 3);
   }
 
   // Firestore doctor id for a doctor name (queue entries store doctorId).
@@ -362,6 +401,7 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
                                 queue: queue,
                                 isMobile: isMobile,
                                 isBusy: _busyDoctorName != null,
+                                doctorOnline: _isDoctorOnline(queue.name),
                                 onComplete: () => _handleComplete(queue.name),
                                 onCallNext: () => _handleCallNext(queue.name),
                                 // Everything is live now, nothing to refresh.
@@ -487,6 +527,7 @@ class _DoctorQueueCard extends StatefulWidget {
   final DoctorQueueStatus queue;
   final bool isMobile;
   final bool isBusy; // an action is running; buttons are disabled
+  final bool doctorOnline; // the doctor's own app is open right now
   final VoidCallback onComplete;
   final VoidCallback onCallNext;
   final VoidCallback onReturn;
@@ -495,6 +536,7 @@ class _DoctorQueueCard extends StatefulWidget {
     required this.queue,
     required this.isMobile,
     required this.isBusy,
+    this.doctorOnline = false,
     required this.onComplete,
     required this.onCallNext,
     required this.onReturn,
@@ -571,6 +613,10 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
                 widget.queue.specialization,
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
               ),
+              if (widget.doctorOnline) ...[
+                const SizedBox(height: 6),
+                _buildOnlineChip(),
+              ],
             ],
           ),
         ),
@@ -639,6 +685,10 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
                   ),
+                  if (widget.doctorOnline) ...[
+                    const SizedBox(height: 6),
+                    _buildOnlineChip(),
+                  ],
                 ],
               ),
             ),
@@ -692,6 +742,37 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
           ],
         ),
       ],
+    );
+  }
+
+  // Shown while the doctor's own app is open (doctor_presence heartbeat).
+  Widget _buildOnlineChip() {
+    const green = Color(0xFF2E7D32);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD4EDDA),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, size: 7, color: green),
+          SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              'Managing own queue',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: green,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

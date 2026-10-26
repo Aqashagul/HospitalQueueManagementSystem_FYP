@@ -36,7 +36,7 @@ class NotifyToggleCard extends StatelessWidget {
           Switch(
             value: isEnabled,
             onChanged: onChanged,
-            activeColor: AppColors.primary,
+            activeThumbColor: AppColors.primary,
           ),
         ],
       ),

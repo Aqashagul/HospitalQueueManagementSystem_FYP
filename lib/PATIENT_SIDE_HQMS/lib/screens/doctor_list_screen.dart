@@ -377,7 +377,7 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
                             return ListView.separated(
                               padding: const EdgeInsets.only(bottom: 20),
                               itemCount: doctors.length,
-                              separatorBuilder: (_, __) =>
+                              separatorBuilder: (_, _) =>
                                   const SizedBox(height: 14),
                               itemBuilder: (context, index) {
                                 final doctor = doctors[index];

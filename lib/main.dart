@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:queue_management_system/BACKEND/auth_service.dart';
+import 'package:queue_management_system/DOCTOR/role_gatway.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/qr_scan_screen.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/splash_screen.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
@@ -19,7 +20,7 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-    if (!kIsWeb) {
+  if (!kIsWeb) {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
   await NotificationService.init();
@@ -27,22 +28,19 @@ Future<void> main() async {
     NotificationService.saveToken().catchError((_) {});
   }
 
-  // Declared here (outside the if) so runApp below can use it.
-  bool isLoggedIn = false;
-
-  // Patient app (mobile/desktop).
+  // Mobile app (patient / doctor).
   if (!kIsWeb) {
     AppdataStore().startListening();
 
-    // Firebase remembers a verified phone number on this device, so this is
-    // true on every launch after the first successful OTP.
-    final user = await FirebaseAuth.instance.authStateChanges().first;
-    isLoggedIn = user != null;
+    // Wait until Firebase has restored any saved session, so PatientRoleGate
+    // sees the correct currentUser on the first frame.
+    await FirebaseAuth.instance.authStateChanges().first;
   }
 
-  runApp(kIsWeb ? const AdminApp() : PatientApp(isLoggedIn: isLoggedIn));
+  runApp(kIsWeb ? const AdminApp() : const PatientApp());
 }
 
+/// Web: admin + doctor dashboard.
 class AdminApp extends StatelessWidget {
   const AdminApp({super.key});
 
@@ -52,8 +50,9 @@ class AdminApp extends StatelessWidget {
       create: (_) => AppdataStore(),
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        // Listens to Firebase login state:
-        // logged in -> dashboard, logged out -> login screen.
+        // logged out -> login screen
+        // logged in  -> AdminRoleGate checks the Firestore role:
+        //               admin -> AppShell, doctor -> DoctorDashboard
         home: StreamBuilder<User?>(
           stream: AuthService().authChanges,
           builder: (context, snapshot) {
@@ -63,11 +62,13 @@ class AdminApp extends StatelessWidget {
                 body: Center(child: CircularProgressIndicator()),
               );
             }
-            // A user is logged in, so skip the login screen
             if (snapshot.hasData) {
-              return const AppShell();
+              return AdminRoleGate(
+                key: ValueKey(snapshot.data!.uid),
+                uid: snapshot.data!.uid,
+                adminHome: const AppShell(),
+              );
             }
-            // Nobody is logged in
             return const LoginScreen();
           },
         ),
@@ -76,19 +77,18 @@ class AdminApp extends StatelessWidget {
   }
 }
 
+/// Mobile: first open asks Patient / Doctor, then opens the right flow.
 class PatientApp extends StatelessWidget {
-  // True when the patient has already verified their phone number.
-  final bool isLoggedIn;
-
-  const PatientApp({super.key, this.isLoggedIn = false});
+  const PatientApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      // Already verified: go straight to the QR page.
-      // First time: the normal flow (splash -> phone number -> OTP).
-      home: isLoggedIn ? const QRScanScreen() : SplashScreen(),
+      home: PatientRoleGate(
+        splashScreen: SplashScreen(),
+        qrScreen: const QRScanScreen(),
+      ),
     );
   }
 }

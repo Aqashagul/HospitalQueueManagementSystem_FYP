@@ -15,6 +15,8 @@ class FormFieldConfig {
   final List<String>? options;   // Static options for dropdown/pillSelector fields.
   final bool halfWidth;          // true = renders side-by-side with an adjacent halfWidth field.
   final bool isNumeric;          // true = only digits are accepted as input.
+  final bool isPassword;         // true = typed text is hidden.
+  final bool isEmail;            // true = email keyboard + email format check.
 
   // Used instead of the static "options" list when this field's choices
   // depend on another field's current value (e.g. the "Doctor" dropdown
@@ -31,17 +33,21 @@ class FormFieldConfig {
     this.options,
     this.halfWidth = false,
     this.isNumeric = false,
+    this.isPassword = false,
+    this.isEmail = false,
     this.dependentOptions,
-     this.emptyOptionsMessage, 
+    this.emptyOptionsMessage,
   });
 }
 
-// Generic Form Dialog 
+// Generic Form Dialog
 class AppFormDialog extends StatefulWidget {
   final String title;
   final List<FormFieldConfig> fields;
   final String submitLabel;
-  final void Function(Map<String, dynamic> values) onSubmit;
+  // May return a Future. The dialog waits for it and only closes on success;
+  // if it throws, the error message is shown inside the dialog.
+  final dynamic Function(Map<String, dynamic> values) onSubmit;
   final Map<String, dynamic>? initialValues; // Pre-filled data for edit dialogs.
 
   const AppFormDialog({
@@ -62,6 +68,8 @@ class _AppFormDialogState extends State<AppFormDialog> {
   final Map<String, TextEditingController> controllers = {};
   final Map<String, Uint8List?> imageBytes = {}; // Picked image data per image field.
   String? errorMessage; // Shown when a required field is left empty on submit.
+  bool isSubmitting = false; // True while onSubmit is running.
+  final Set<String> _visiblePasswords = {}; // password fields shown as plain text
 
   @override
   void initState() {
@@ -77,7 +85,7 @@ class _AppFormDialogState extends State<AppFormDialog> {
           final initialOptions = field.dependentOptions!(values);
           values[field.key] = initialOptions.isNotEmpty ? initialOptions.first : null;
         } else {
-         values[field.key] = field.options?.firstOrNull;
+          values[field.key] = field.options?.firstOrNull;
         }
       } else if (field.type == FieldType.image) {
         // In edit mode, preload the existing photo if there is one.
@@ -98,53 +106,86 @@ class _AppFormDialogState extends State<AppFormDialog> {
     super.dispose();
   }
 
-void _handleSubmit() {
-  for (final field in widget.fields) {
-    if (controllers.containsKey(field.key)) {
-      values[field.key] = controllers[field.key]!.text;
-    }
-    if (field.type == FieldType.image) {
-      values[field.key] = imageBytes[field.key];
-    }
-  }
+  Future<void> _handleSubmit() async {
+    if (isSubmitting) return;
 
-  final missingLabels = <String>[];
-  for (final field in widget.fields) {
-    if (!field.required) continue;
-
-    final isTextType = field.type == FieldType.text || field.type == FieldType.textArea;
-    if (isTextType) {
-      final value = (values[field.key] as String?)?.trim() ?? "";
-      if (value.isEmpty) missingLabels.add(field.label);
-    } else if (field.type == FieldType.dropdown) {          
-      if (values[field.key] == null) missingLabels.add(field.label);
+    for (final field in widget.fields) {
+      if (controllers.containsKey(field.key)) {
+        values[field.key] = controllers[field.key]!.text;
+      }
+      if (field.type == FieldType.image) {
+        values[field.key] = imageBytes[field.key];
+      }
     }
-  }
 
-  if (missingLabels.isNotEmpty) {
+    final missingLabels = <String>[];
+    for (final field in widget.fields) {
+      if (!field.required) continue;
+
+      final isTextType = field.type == FieldType.text || field.type == FieldType.textArea;
+      if (isTextType) {
+        final value = (values[field.key] as String?)?.trim() ?? "";
+        if (value.isEmpty) missingLabels.add(field.label);
+      } else if (field.type == FieldType.dropdown) {
+        if (values[field.key] == null) missingLabels.add(field.label);
+      }
+    }
+
+    if (missingLabels.isNotEmpty) {
+      setState(() {
+        errorMessage = "Please fill: ${missingLabels.join(', ')}";
+      });
+      return;
+    }
+
+    for (final field in widget.fields) {
+      // Only text fields hold a String. A photo field holds bytes, so it
+      // must not be cast to String (that used to crash Save when a photo
+      // was picked).
+      final raw = values[field.key];
+      final v = raw is String ? raw.trim() : "";
+
+      if (field.isEmail &&
+          v.isNotEmpty &&
+          !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v)) {
+        setState(() => errorMessage = "Enter a valid email address");
+        return;
+      }
+      if (field.isPassword && v.isNotEmpty && v.length < 6) {
+        setState(() => errorMessage = "Password must be at least 6 characters");
+        return;
+      }
+    }
+
     setState(() {
-      errorMessage = "Please fill: ${missingLabels.join(', ')}";
+      errorMessage = null;
+      isSubmitting = true;
     });
-    return;
+    try {
+      await widget.onSubmit(values);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          isSubmitting = false;
+          errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
   }
-
-  widget.onSubmit(values);
-  Navigator.pop(context);
-}
 
   @override
   Widget build(BuildContext context) {
     final Size screenSize = MediaQuery.of(context).size;
-    final bool isMobile = screenSize.width < 700; 
+    final bool isMobile = screenSize.width < 700;
 
-   
-    final double dialogWidth = isMobile ? screenSize.width * 0.92 : 420; 
-    final double dialogMaxHeight = isMobile ? screenSize.height * 0.85 : 640; 
+    final double dialogWidth = isMobile ? screenSize.width * 0.92 : 420;
+    final double dialogMaxHeight = isMobile ? screenSize.height * 0.85 : 640;
 
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: isMobile
-          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 24) 
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 24)
           : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       child: Container(
         width: dialogWidth,
@@ -165,7 +206,7 @@ void _handleSubmit() {
                 Expanded(
                   child: Text(
                     widget.title,
-                    overflow: TextOverflow.ellipsis, 
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -198,15 +239,28 @@ void _handleSubmit() {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _handleSubmit,
+                onPressed: isSubmitting ? null : _handleSubmit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryPurple,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text(widget.submitLabel,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                // A small spinner while saving, so it is clear something is
+                // happening (creating a login can take a moment).
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        widget.submitLabel,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
               ),
             ),
           ],
@@ -226,7 +280,7 @@ void _handleSubmit() {
     while (i < widget.fields.length) {
       final field = widget.fields[i];
 
-      if (!isMobile && 
+      if (!isMobile &&
           field.halfWidth &&
           i + 1 < widget.fields.length &&
           widget.fields[i + 1].halfWidth) {
@@ -248,7 +302,6 @@ void _handleSubmit() {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows);
   }
-
 
   Widget _buildField(FormFieldConfig field) {
     switch (field.type) {
@@ -284,6 +337,8 @@ void _handleSubmit() {
   }
 
   Widget _buildTextField(FormFieldConfig field, {int maxLines = 1}) {
+    final bool passwordVisible = _visiblePasswords.contains(field.key);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -292,7 +347,12 @@ void _handleSubmit() {
         TextField(
           controller: controllers[field.key],
           maxLines: maxLines,
-          keyboardType: field.isNumeric ? TextInputType.number : TextInputType.text,
+          obscureText: field.isPassword && !passwordVisible,
+          keyboardType: field.isNumeric
+              ? TextInputType.number
+              : field.isEmail
+                  ? TextInputType.emailAddress
+                  : TextInputType.text,
           inputFormatters: field.isNumeric
               ? [FilteringTextInputFormatter.digitsOnly] // Only 0-9 gets through.
               : null,
@@ -309,54 +369,72 @@ void _handleSubmit() {
               borderSide: BorderSide(color: Colors.grey.shade300),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            // Eye button: show / hide the password.
+            suffixIcon: field.isPassword
+                ? IconButton(
+                    icon: Icon(
+                      passwordVisible
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: Colors.grey.shade600,
+                    ),
+                    onPressed: () => setState(() {
+                      if (passwordVisible) {
+                        _visiblePasswords.remove(field.key);
+                      } else {
+                        _visiblePasswords.add(field.key);
+                      }
+                    }),
+                  )
+                : null,
           ),
         ),
       ],
     );
   }
 
-Widget _buildDropdownField(FormFieldConfig field) {
-  final List<String> currentOptions =
-      field.dependentOptions != null ? field.dependentOptions!(values) : (field.options ?? []);
+  Widget _buildDropdownField(FormFieldConfig field) {
+    final List<String> currentOptions =
+        field.dependentOptions != null ? field.dependentOptions!(values) : (field.options ?? []);
 
-  if (currentOptions.isNotEmpty && !currentOptions.contains(values[field.key])) {
-    values[field.key] = currentOptions.first;
-  } else if (currentOptions.isEmpty) {
-    values[field.key] = null; 
+    if (currentOptions.isNotEmpty && !currentOptions.contains(values[field.key])) {
+      values[field.key] = currentOptions.first;
+    } else if (currentOptions.isEmpty) {
+      values[field.key] = null;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _fieldLabel(field),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(
+              color: currentOptions.isEmpty ? Colors.orange.shade300 : Colors.grey.shade300,
+            ),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: currentOptions.isEmpty ? null : values[field.key],
+              isExpanded: true,
+              hint: currentOptions.isEmpty
+                  ? Text(
+                      field.emptyOptionsMessage ?? "No options available",
+                      style: TextStyle(color: Colors.orange.shade700, fontSize: 13),
+                    )
+                  : null,
+              items: currentOptions.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+              onChanged: currentOptions.isEmpty ? null : (v) => setState(() => values[field.key] = v),
+            ),
+          ),
+        ),
+      ],
+    );
   }
-
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _fieldLabel(field),
-      const SizedBox(height: 6),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(
-            color: currentOptions.isEmpty ? Colors.orange.shade300 : Colors.grey.shade300, 
-          ),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: currentOptions.isEmpty ? null : values[field.key],
-            isExpanded: true,
-            hint: currentOptions.isEmpty
-                ? Text(
-                    field.emptyOptionsMessage ?? "No options available",  
-                    style: TextStyle(color: Colors.orange.shade700, fontSize: 13),
-                  )
-                : null,
-            items: currentOptions.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
-            onChanged: currentOptions.isEmpty ? null : (v) => setState(() => values[field.key] = v),
-          ),
-        ),
-      ),
-    ],
-  );
-}
 
   // Two-option toggle (e.g. Active/Inactive, Available/Unavailable),
   // rendered as side-by-side selectable pills.
@@ -392,10 +470,10 @@ Widget _buildDropdownField(FormFieldConfig field) {
                           color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade400,
                         ),
                         const SizedBox(width: 8),
-                        Flexible( 
+                        Flexible(
                           child: Text(
                             option,
-                            overflow: TextOverflow.ellipsis, 
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade600,
@@ -415,8 +493,8 @@ Widget _buildDropdownField(FormFieldConfig field) {
   }
 
   // Circular image picker — tapping it opens the gallery, and the
-  // picked image is stored as raw bytes (compressed to max 600px wide
-  // before reading) rather than a file path.
+  // picked image is stored as raw bytes (shrunk to 600px before reading)
+  // rather than a file path.
   Widget _buildImagePicker(FormFieldConfig field) {
     final Uint8List? currentBytes = imageBytes[field.key];
 
@@ -427,17 +505,29 @@ Widget _buildDropdownField(FormFieldConfig field) {
         const SizedBox(height: 8),
         GestureDetector(
           onTap: () async {
-            final picker = ImagePicker();
-            final pickedFile = await picker.pickImage(
-              source: ImageSource.gallery,
-              maxWidth: 600, // Compress before storing.
-            );
-            if (pickedFile == null) return;
+            try {
+              final picker = ImagePicker();
+              final pickedFile = await picker.pickImage(
+                source: ImageSource.gallery,
+                maxWidth: 600, // Shrink before storing.
+                maxHeight: 600,
+                imageQuality: 85,
+              );
+              if (pickedFile == null) return;
 
-            final bytes = await pickedFile.readAsBytes();
-            setState(() {
-              imageBytes[field.key] = bytes;
-            });
+              final bytes = await pickedFile.readAsBytes();
+              if (!mounted) return;
+              setState(() {
+                imageBytes[field.key] = bytes;
+                errorMessage = null;
+              });
+            } catch (_) {
+              if (!mounted) return;
+              setState(() {
+                errorMessage =
+                    "Could not open the photo. Please try another picture.";
+              });
+            }
           },
           child: Container(
             width: 90,

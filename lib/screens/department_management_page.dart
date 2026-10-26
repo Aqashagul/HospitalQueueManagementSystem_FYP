@@ -663,6 +663,39 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
   // Table. Desktop: renders as-is. Mobile: wrapped in horizontal scroll
   // with a fixed min-width so flex columns don't get squeezed.
   Widget _buildTable(List<Department> departments, {required bool isMobile}) {
+
+        // No departments at all: show a picture instead of the plain text.
+    // (If departments exist but the search/filter finds none, the table's
+    // own "no results" text is used as before.)
+    if (AppdataStore().departments.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/no_dept_yet.png',
+                width: isMobile ? 220 : 380,
+                fit: BoxFit.contain,
+                // Until the picture file is added, an icon is shown instead.
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.apartment_outlined,
+                  size: 96,
+                  color: Colors.grey.shade300,
+                ),
+              ),
+              const SizedBox(height: 8),
+             /* Text(
+                "Add your first department to get started.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+              ),*/
+            ],
+          ),
+        ),
+      );
+    }
     final table = DataTableCard<Department>(
       items: departments,
       emptyMessage: "No departments added yet",
