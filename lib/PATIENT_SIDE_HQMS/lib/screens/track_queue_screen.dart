@@ -2,18 +2,19 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/queue_service.dart';
+import '../models/doctor.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
 import '../widgets/doctor_mini_card.dart';
-import '../widgets/queue_number_progress_card.dart';
-import '../widgets/notify_toggle_card.dart';
-import '../widgets/secondary_button.dart';
 import '../widgets/leave_queue_dialog.dart';
-import '../models/doctor.dart';
-import '../widgets/queue_progress_card.dart';
+import '../widgets/queue_entry_missing_view.dart';
+import '../widgets/queue_number_progress_card.dart';
+import '../widgets/track_bottom_bar.dart';
+import '../widgets/track_header.dart';
+import '../widgets/track_stats_row.dart';
+import '../widgets/track_status_hero_card.dart';
+import '../widgets/turn_alerts_card.dart';
 import 'department_list_screen.dart';
-import 'qr_scan_screen.dart';
-
 
 class TrackQueueScreen extends StatefulWidget {
   final Doctor doctor;
@@ -38,7 +39,7 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
   bool _notifyEnabled = true;
   bool _leaving = false;
 
-  // Patients ahead when this screen first received data (for the progress bar).
+  // Patients ahead when this screen first received data.
   int? _initialAhead;
 
   @override
@@ -46,6 +47,10 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
     super.initState();
     _entriesStream = _queueService.watchTodaysEntries(widget.doctor.id);
   }
+
+  // ---------------------------------------------------------------------------
+  // Logic (Firebase / queue) - UI is in widgets/
+  // ---------------------------------------------------------------------------
 
   bool _isInConsultation(String? raw) {
     switch ((raw ?? '').toLowerCase()) {
@@ -61,6 +66,21 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
   bool _isCompleted(String? raw) {
     final s = (raw ?? '').toLowerCase();
     return s == 'completed' || s == 'done';
+  }
+
+  String _formatWait(int minutes) {
+    if (minutes <= 0) return 'Now';
+    if (minutes < 60) return '$minutes min';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m == 0 ? '${h}h' : '${h}h ${m}m';
+  }
+
+  void _goHome() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const DepartmentListScreen()),
+      (route) => false,
+    );
   }
 
   Future<void> _handleLeaveQueue() async {
@@ -80,255 +100,152 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
     }
 
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const DepartmentListScreen()),
-      (route) => false, // clear the whole old history
-    );
+    _goHome();
   }
 
-  // Shown when this patient's entry no longer exists in today's queue.
-  Widget _buildEntryMissing() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'This queue entry is no longer active.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textDark,
-              ),
-            ),
-            const SizedBox(height: 16),
-            SecondaryButton(
-              label: 'Back to Home',
-              icon: Icons.home_rounded,
-              gradientColors: [
-                AppColors.gradientStart.withValues(alpha: .3),
-                AppColors.gradientEnd.withValues(alpha: .3),
-              ],
-              textColor: AppColors.primary,
-              onPressed: () {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const QRScanScreen()),
-                  (route) => false,
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _statusBanner(String text, Color color) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .12),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: .4)),
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
-      ),
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          const BackgroundBlobs(),
-          SafeArea(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _entriesStream,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Failed to load queue: ${snapshot.error}'),
-                  );
-                }
-                if (!snapshot.hasData || _leaving) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  );
-                }
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goHome();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: Stack(
+          children: [
+            const BackgroundBlobs(),
+            SafeArea(
+              bottom: false,
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _entriesStream,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text('Failed to load queue: ${snapshot.error}'),
+                    );
+                  }
+                  if (!snapshot.hasData || _leaving) {
+                    return const Center(
+                      child:
+                          CircularProgressIndicator(color: AppColors.primary),
+                    );
+                  }
 
-                final docs = snapshot.data!.docs;
+                  final docs = snapshot.data!.docs;
 
-                // Find this patient's own entry.
-                QueryDocumentSnapshot<Map<String, dynamic>>? mine;
-                for (final d in docs) {
-                  if (d.id == widget.entryId) mine = d;
-                }
-                if (mine == null) return _buildEntryMissing();
+                  // Find this patient's own entry.
+                  QueryDocumentSnapshot<Map<String, dynamic>>? mine;
+                  for (final d in docs) {
+                    if (d.id == widget.entryId) mine = d;
+                  }
+                  if (mine == null) {
+                    return QueueEntryMissingView(onHome: _goHome);
+                  }
 
-                final myData = mine.data();
-                final int mySeq = (myData['seq'] as int?) ?? 0;
-                final String? myStatus = myData['status']?.toString();
+                  final myData = mine.data();
+                  final int mySeq = (myData['seq'] as int?) ?? 0;
+                  final String? myStatus = myData['status']?.toString();
+                  final String myToken = myData['token']?.toString() ?? '--';
 
-                // Everyone still in the queue today for this doctor.
-                final active = docs
-                    .where((d) => QueueService.isActiveStatus(
-                          d.data()['status']?.toString(),
-                        ))
-                    .toList();
+                  // Everyone still in the queue today for this doctor.
+                  final active = docs
+                      .where((d) => QueueService.isActiveStatus(
+                            d.data()['status']?.toString(),
+                          ))
+                      .toList();
 
-                final int ahead = active.where((d) {
-                  final s = d.data()['seq'];
-                  return s is int && s < mySeq;
-                }).length;
-                _initialAhead ??= ahead;
+                  final int ahead = active.where((d) {
+                    final s = d.data()['seq'];
+                    return s is int && s < mySeq;
+                  }).length;
+                  _initialAhead ??= ahead;
+                  final int initial = _initialAhead!;
+                  final int position = ahead + 1;
 
-                final int position = ahead + 1;
+                  // Token currently being served (lowest seq in consultation).
+                  final serving = active
+                      .where((d) =>
+                          _isInConsultation(d.data()['status']?.toString()))
+                      .toList()
+                    ..sort((a, b) => ((a.data()['seq'] as int?) ?? 0)
+                        .compareTo((b.data()['seq'] as int?) ?? 0));
+                  final String nowServingToken = serving.isEmpty
+                      ? '--'
+                      : (serving.first.data()['token']?.toString() ?? '--');
 
-                // Token currently being served (lowest seq in consultation).
-                final serving = active
-                    .where((d) =>
-                        _isInConsultation(d.data()['status']?.toString()))
-                    .toList()
-                  ..sort((a, b) => ((a.data()['seq'] as int?) ?? 0)
-                      .compareTo((b.data()['seq'] as int?) ?? 0));
-                final String nowServingToken = serving.isEmpty
-                    ? '--'
-                    : (serving.first.data()['token']?.toString() ?? '--');
+                  final int remainingMinutes =
+                      ahead * widget.doctor.averageMinutesPerPatient;
 
-                final int remainingMinutes =
-                    ahead * widget.doctor.averageMinutesPerPatient;
-                final String estimatedWait = remainingMinutes < 60
-                    ? '$remainingMinutes min'
-                    : '${remainingMinutes ~/ 60}h ${remainingMinutes % 60}m';
+                  final bool myTurn = _isInConsultation(myStatus);
+                  final bool done = _isCompleted(myStatus);
 
-                return SingleChildScrollView(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  return Column(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Track Queue',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                          // The screen updates live, so there is no refresh button.
-                          Row(
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
-                                ),
+                              TrackHeader(onBack: _goHome),
+                              const SizedBox(height: 18),
+
+                              // 1. Doctor card (original gradient card)
+                              DoctorMiniCard(doctor: widget.doctor),
+                              const SizedBox(height: 18),
+
+                              // 2. Queue progress (your original widget)
+                              QueueNumberProgress(
+                                totalInQueue: initial + 1,
+                                currentPosition: position,
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Live',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textGrey,
-                                ),
+                              const SizedBox(height: 18),
+
+                              // 3. Token / position card
+                              TrackStatusHeroCard(
+                                myTurn: myTurn,
+                                done: done,
+                                position: position,
+                                ahead: ahead,
+                              ),
+                              const SizedBox(height: 16),
+
+                              // 4. Your Token, Now Serving, Est. Wait
+                              TrackStatsRow(
+                                yourToken: myToken,
+                                nowServing: nowServingToken,
+                                estWait: (myTurn || done)
+                                    ? '--'
+                                    : _formatWait(remainingMinutes),
+                              ),
+                              const SizedBox(height: 14),
+
+                              TurnAlertsCard(
+                                value: _notifyEnabled,
+                                onChanged: (v) =>
+                                    setState(() => _notifyEnabled = v),
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-
-                      if (_isInConsultation(myStatus))
-                        _statusBanner(
-                          "It's your turn. Please go to the doctor.",
-                          Colors.green.shade700,
-                        )
-                      else if (_isCompleted(myStatus))
-                        _statusBanner(
-                          'Your consultation is completed.',
-                          AppColors.primary,
                         ),
-
-                      DoctorMiniCard(doctor: widget.doctor),
-                      const SizedBox(height: 22),
-
-                      QueueNumberProgress(
-                        totalInQueue: _initialAhead! + 1,
-                        currentPosition: position,
                       ),
-                      const SizedBox(height: 22),
-
-                      QueueProgressCard(
-                        position: position,
-                        totalAheadAtStart: _initialAhead!,
-                        nowServingToken: nowServingToken,
-                        estimatedWaitTime: estimatedWait,
+                      TrackBottomBar(
+                        showLeave: !myTurn && !done,
+                        onLeave: _handleLeaveQueue,
+                        onHome: _goHome,
                       ),
-                      const SizedBox(height: 18),
-
-                      NotifyToggleCard(
-                        isEnabled: _notifyEnabled,
-                        onChanged: (value) =>
-                            setState(() => _notifyEnabled = value),
-                      ),
-                      const SizedBox(height: 28),
-
-                      SecondaryButton(
-                        label: 'Leave Queue',
-                        icon: Icons.logout_rounded,
-                        gradientColors: [
-                          Colors.red.shade100,
-                          Colors.red.shade200,
-                        ],
-                        textColor: Colors.red.shade700,
-                        onPressed: _handleLeaveQueue,
-                      ),
-                      const SizedBox(height: 12),
-
-                      SecondaryButton(
-                        label: 'Back to Home',
-                        icon: Icons.home_rounded,
-                        gradientColors: [
-                          AppColors.gradientStart.withValues(alpha: .3),
-                          AppColors.gradientEnd.withValues(alpha: .3),
-                        ],
-                        textColor: AppColors.primary,
-                        onPressed: () {
-                          Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(
-                              builder: (_) => const QRScanScreen(),
-                            ),
-                            (route) => false,
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 20),
                     ],
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

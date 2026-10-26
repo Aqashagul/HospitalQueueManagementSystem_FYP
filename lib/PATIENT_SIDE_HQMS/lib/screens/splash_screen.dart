@@ -32,17 +32,15 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Transform.translate(
-                offset: const Offset(0, -30),
-                child: const _PulsingLogo(),
-              ),
-              const SizedBox(height: 10),
+          const _PulsingLogo(),
+              const SizedBox(height: 0),
+              
               SizedBox(
                 width: 120,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: const LinearProgressIndicator(
-                    color: AppColors.primary,
+                    color: Color.fromRGBO(162, 90, 230, 1),
                     backgroundColor: Color(0xFFE8DFF7),
                     minHeight: 5,
                   ),
@@ -91,7 +89,11 @@ class _PulsingLogoState extends State<_PulsingLogo>
   Widget build(BuildContext context) {
     return ScaleTransition(
       scale: _scale,
-      child: Image.asset('assets/images/app_logo.png', width: 160, height: 160),
+      child: Transform.translate(
+        offset: const Offset(0,0),
+         child: Image.asset('assets/images/app_logo1.png', width: 200, height: 200),
+        )
+     
     );
   }
 }

@@ -109,7 +109,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+     return PopScope(
+      canPop: false,
+      child: Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
@@ -122,24 +124,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    IconButton(
-                      onPressed: () {
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                            builder: (_) => const QRScanScreen(),
-                          ),
-                        );
-                      },
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
                     // Step 1/2/3 indicator
                     const StepProgressIndicator(currentStep: 1),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 20),
 
                     const Center(
                       child: Text(
@@ -164,7 +151,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
                     // White card containing both fields + info note
                     Container(
@@ -260,7 +247,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                           fontWeight: FontWeight.w600,
                                         ),
                                         decoration: const InputDecoration(
-                                          hintText: '3001234567',
+                                          hintText: 'Enter your number',
                                           hintStyle: TextStyle(
                                             color: AppColors.textGrey,
                                             fontWeight: FontWeight.normal,
@@ -291,7 +278,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 15),
 
                           // Info note inside card
                           Container(
@@ -331,7 +318,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
                     _isSending
                         ? const Center(
@@ -413,13 +400,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 5),
                   ],
                 ),
               ),
             ),
           ),
         ],
+      ),
       ),
     );
   }

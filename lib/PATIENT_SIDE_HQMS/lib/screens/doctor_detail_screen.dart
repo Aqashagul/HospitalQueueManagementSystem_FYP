@@ -13,6 +13,8 @@ import '../widgets/join_queue_dialog.dart';
 import '../models/doctor.dart';
 import 'queue_success_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/notification_bell.dart';
+import '../widgets/app_back_button.dart';
 
 
 
@@ -208,9 +210,13 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
     );
   }
 
-  // Doctor's picture (uploaded photo, else asset, else initials) with a
-  // gradient ring, followed by the name, specialization and experience.
+  // ---------------------------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------------------------
+
+  // Photo with gradient ring, name, specialization, availability chip.
   Widget _buildDoctorHeader(Doctor doctor) {
+    final Color c = doctor.isActive ? Colors.green.shade700 : Colors.grey;
     return Column(
       children: [
         Container(
@@ -243,8 +249,35 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 13.5, color: AppColors.textGrey),
         ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: c.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                doctor.isActive ? 'Available Now' : 'Unavailable',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: c,
+                ),
+              ),
+            ],
+          ),
+        ),
         if (doctor.experience.isNotEmpty) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           Text(
             '${doctor.experience} experience',
             style: TextStyle(fontSize: 12.5, color: AppColors.textGrey),
@@ -255,105 +288,123 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
   }
 
   Widget _buildScreen(Doctor doctor) {
+    final bool canJoin = doctor.isActive && !_joining;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
           const BackgroundBlobs(),
           SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(
-                      Icons.arrow_back,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  Center(child: _buildDoctorHeader(doctor)),
-                  const SizedBox(height: 28),
-
-                  // Gradient highlight row - Patients Ahead, Est. Wait, Fee
-                  Row(
+            child: Column(
+              children: [
+                // ---- Top bar: back + bell ----
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
+                  child: Row(
                     children: [
-                      Expanded(
-                        child: GradientStatCard(
-                          icon: Icons.groups_2_rounded,
-                          label: 'Patients Ahead',
-                          value: '${doctor.currentQueueLength}',
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              const Color.fromARGB(255, 106, 183, 183).withValues(alpha: 0.80),
-                              const Color.fromARGB(255, 121, 170, 173).withValues(alpha: 0.80),
-                              const Color.fromARGB(255, 199, 141, 230).withValues(alpha: 0.80),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: GradientStatCard(
-                          icon: Icons.timer_outlined,
-                          label: 'Est. Wait Time',
-                          value: doctor.estimatedWaitTime,
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              const Color.fromARGB(255, 200, 183, 211).withValues(alpha: 0.80),
-                              const Color.fromARGB(255, 138, 97, 169).withValues(alpha: 0.80),
-                              const Color.fromARGB(255, 27, 113, 193).withValues(alpha: 0.80),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: GradientStatCard(
-                          icon: Icons.payments_outlined,
-                          label: 'Consultation Fee',
-                          value: doctor.consultationFee,
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              const Color.fromARGB(255, 106, 183, 183).withValues(alpha: 0.80),
-                              const Color.fromARGB(255, 121, 170, 173).withValues(alpha: 0.80),
-                              const Color.fromARGB(255, 199, 141, 230).withValues(alpha: 0.80),
-                            ],
-                          ),
-                        ),
-                      ),
+                      AppBackButton(),
+                      Spacer(),
+                      NotificationBell(),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                ),
 
-                  // Available timing - only shown when the admin has
-                  // entered working hours for this doctor.
-                  if (doctor.availability.isNotEmpty) ...[
-                    AvailableTimingCard(timing: doctor.availability),
-                    const SizedBox(height: 20),
-                  ],
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 22,
+                      vertical: 12,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(child: _buildDoctorHeader(doctor)),
+                        const SizedBox(height: 26),
 
-                  // About - only shown when the admin has entered a
-                  // qualification (that text is what fills this card).
-                  if (doctor.about.isNotEmpty) ...[
-                    AboutDoctorCard(about: doctor.about),
-                    const SizedBox(height: 32),
-                  ] else
-                    const SizedBox(height: 12),
+                        // Gradient highlight row - Patients Ahead, Est. Wait, Fee
+                        Row(
+                          children: [
+                            Expanded(
+                              child: GradientStatCard(
+                                icon: Icons.groups_2_rounded,
+                                label: 'Patients Ahead',
+                                value: '${doctor.currentQueueLength}',
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    const Color.fromARGB(255, 106, 183, 183).withValues(alpha: 0.80),
+                                    const Color.fromARGB(255, 121, 170, 173).withValues(alpha: 0.80),
+                                    const Color.fromARGB(255, 199, 141, 230).withValues(alpha: 0.80),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: GradientStatCard(
+                                icon: Icons.timer_outlined,
+                                label: 'Est. Wait Time',
+                                value: doctor.estimatedWaitTime,
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    const Color.fromARGB(255, 200, 183, 211).withValues(alpha: 0.80),
+                                    const Color.fromARGB(255, 138, 97, 169).withValues(alpha: 0.80),
+                                    const Color.fromARGB(255, 27, 113, 193).withValues(alpha: 0.80),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: GradientStatCard(
+                                icon: Icons.payments_outlined,
+                                label: 'Consultation Fee',
+                                value: doctor.consultationFee,
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    const Color.fromARGB(255, 106, 183, 183).withValues(alpha: 0.80),
+                                    const Color.fromARGB(255, 121, 170, 173).withValues(alpha: 0.80),
+                                    const Color.fromARGB(255, 199, 141, 230).withValues(alpha: 0.80),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
 
-                  Opacity(
-                    opacity: (doctor.isActive && !_joining) ? 1.0 : 0.5,
+                        // Available timing - only shown when the admin has
+                        // entered working hours for this doctor.
+                        if (doctor.availability.isNotEmpty) ...[
+                          AvailableTimingCard(timing: doctor.availability),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // About - only shown when the admin has entered a
+                        // qualification (that text is what fills this card).
+                        if (doctor.about.isNotEmpty) ...[
+                          AboutDoctorCard(about: doctor.about),
+                          const SizedBox(height: 32),
+                        ] else
+                          const SizedBox(height: 12),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ---- Join button, fixed at the bottom ----
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 8, 22, 16),
+                  child: Opacity(
+                    opacity: canJoin ? 1.0 : 0.5,
                     child: IgnorePointer(
-                      ignoring: !doctor.isActive || _joining,
+                      ignoring: !canJoin,
                       child: PremiumButton(
                         label: !doctor.isActive
                             ? 'Currently Unavailable'
@@ -362,9 +413,8 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],

@@ -6,9 +6,12 @@ import 'package:queue_management_system/models/doctor_model.dart';
 import 'package:queue_management_system/widgets/loading_or_offline.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
-import '../models/doctor.dart'; 
+import '../models/doctor.dart';
 import 'doctor_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/app_back_button.dart';
+import '../widgets/notification_bell.dart';
+
 
 
 class DoctorListScreen extends StatefulWidget {
@@ -117,14 +120,14 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(
-                      Icons.arrow_back,
-                      color: AppColors.textDark,
-                    ),
+                    Row(
+                    children: const [
+                      AppBackButton(),
+                      Spacer(),
+                      NotificationBell(),
+                    ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 14),
 
                   // Department name badge
                   Container(
@@ -189,7 +192,8 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
                               ),
                             ],
                           ),
-                          child: (departmentPhoto != null &&
+                          child:
+                              (departmentPhoto != null &&
                                   departmentPhoto.isNotEmpty)
                               ? Image.memory(
                                   departmentPhoto,
