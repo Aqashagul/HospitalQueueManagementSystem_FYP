@@ -6,12 +6,14 @@ class TrackBottomBar extends StatelessWidget {
   final bool showLeave;
   final VoidCallback onLeave;
   final VoidCallback onHome;
+  final bool showHome;
 
   const TrackBottomBar({
     super.key,
     required this.showLeave,
     required this.onLeave,
     required this.onHome,
+     this.showHome = true,
   });
 
   @override

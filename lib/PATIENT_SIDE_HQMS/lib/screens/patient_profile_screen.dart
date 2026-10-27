@@ -10,6 +10,7 @@ import '../widgets/background_blobs.dart';
 import '../widgets/premium_button.dart';
 import 'welcome_screen.dart';
 import 'terms_conditions_screen.dart';
+import '../widgets/page_top_bar.dart';
 
 class PatientProfileScreen extends StatefulWidget {
   const PatientProfileScreen({super.key});
@@ -206,6 +207,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
       (route) => false,
     );
     try {
+         (await SharedPreferences.getInstance()).remove('active_entry_id');
       await _auth.signOut();
     } catch (_) {}
   }
@@ -239,14 +241,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Profile',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textDark,
-                        ),
-                      ),
+                     const PageTopBar(title: 'Profile', showBell: false),
                       const SizedBox(height: 18),
 
                       // ---- Header card ----

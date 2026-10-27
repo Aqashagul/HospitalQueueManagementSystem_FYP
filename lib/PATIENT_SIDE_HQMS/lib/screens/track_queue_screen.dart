@@ -15,17 +15,23 @@ import '../widgets/track_stats_row.dart';
 import '../widgets/track_status_hero_card.dart';
 import '../widgets/turn_alerts_card.dart';
 import 'department_list_screen.dart';
+import '../widgets/app_bottom_nav.dart';
+
+
+
 
 class TrackQueueScreen extends StatefulWidget {
   final Doctor doctor;
 
   // Firestore document id of this patient's queue entry.
   final String entryId;
+   final bool embedded;
 
   const TrackQueueScreen({
     super.key,
     required this.doctor,
     required this.entryId,
+     this.embedded = false,
   });
 
   @override
@@ -116,6 +122,8 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
       },
       child: Scaffold(
         backgroundColor: AppColors.background,
+          bottomNavigationBar:
+            widget.embedded ? const AppBottomNav(currentIndex: 2) : null,
         body: Stack(
           children: [
             const BackgroundBlobs(),
@@ -234,11 +242,13 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
                           ),
                         ),
                       ),
-                      TrackBottomBar(
-                        showLeave: !myTurn && !done,
-                        onLeave: _handleLeaveQueue,
-                        onHome: _goHome,
-                      ),
+                                           if (!widget.embedded || (!myTurn && !done))
+                        TrackBottomBar(
+                          showLeave: !myTurn && !done,
+                          showHome: !widget.embedded,
+                          onLeave: _handleLeaveQueue,
+                          onHome: _goHome,
+                        ),
                     ],
                   );
                 },
