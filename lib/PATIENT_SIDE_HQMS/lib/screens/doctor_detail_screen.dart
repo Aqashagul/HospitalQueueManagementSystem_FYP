@@ -15,8 +15,7 @@ import 'queue_success_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/app_back_button.dart';
-
-
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DoctorDetailScreen extends StatefulWidget {
   final Doctor doctor;
@@ -44,7 +43,9 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
   // Patients who still hold a place (waiting or in consultation).
   int _activeCount(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     return docs
-        .where((d) => QueueService.isActiveStatus(d.data()['status']?.toString()))
+        .where(
+          (d) => QueueService.isActiveStatus(d.data()['status']?.toString()),
+        )
         .length;
   }
 
@@ -74,7 +75,7 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
     return minutes < 1 ? 1 : minutes;
   }*/
 
-    // An average is only trusted after this many real consultations today.
+  // An average is only trusted after this many real consultations today.
   static const int _minSamples = 3;
 
   // Average consultation time today, in minutes, measured from real
@@ -90,8 +91,10 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
       final called = data['calledAt'];
       final completed = data['completedAt'];
       if (called is Timestamp && completed is Timestamp) {
-        final diff =
-            completed.toDate().difference(called.toDate()).inMilliseconds;
+        final diff = completed
+            .toDate()
+            .difference(called.toDate())
+            .inMilliseconds;
         // Ignore anything shorter than 1 minute (accidental clicks or quick
         // test taps), so it cannot drag the average down to nothing.
         if (diff >= 60000) {
@@ -168,6 +171,11 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
 
       // Saves the token, doctor and department in Firestore.
       final result = await QueueService().joinQueue(doctor);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('active_entry_id', result.entryId);
+
+      
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -302,11 +310,7 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
                 const Padding(
                   padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
                   child: Row(
-                    children: [
-                      AppBackButton(),
-                      Spacer(),
-                      NotificationBell(),
-                    ],
+                    children: [AppBackButton(), Spacer(), NotificationBell()],
                   ),
                 ),
 
@@ -334,9 +338,24 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                   colors: [
-                                    const Color.fromARGB(255, 106, 183, 183).withValues(alpha: 0.80),
-                                    const Color.fromARGB(255, 121, 170, 173).withValues(alpha: 0.80),
-                                    const Color.fromARGB(255, 199, 141, 230).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      106,
+                                      183,
+                                      183,
+                                    ).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      121,
+                                      170,
+                                      173,
+                                    ).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      199,
+                                      141,
+                                      230,
+                                    ).withValues(alpha: 0.80),
                                   ],
                                 ),
                               ),
@@ -351,9 +370,24 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                   colors: [
-                                    const Color.fromARGB(255, 200, 183, 211).withValues(alpha: 0.80),
-                                    const Color.fromARGB(255, 138, 97, 169).withValues(alpha: 0.80),
-                                    const Color.fromARGB(255, 27, 113, 193).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      200,
+                                      183,
+                                      211,
+                                    ).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      138,
+                                      97,
+                                      169,
+                                    ).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      27,
+                                      113,
+                                      193,
+                                    ).withValues(alpha: 0.80),
                                   ],
                                 ),
                               ),
@@ -368,9 +402,24 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                   colors: [
-                                    const Color.fromARGB(255, 106, 183, 183).withValues(alpha: 0.80),
-                                    const Color.fromARGB(255, 121, 170, 173).withValues(alpha: 0.80),
-                                    const Color.fromARGB(255, 199, 141, 230).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      106,
+                                      183,
+                                      183,
+                                    ).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      121,
+                                      170,
+                                      173,
+                                    ).withValues(alpha: 0.80),
+                                    const Color.fromARGB(
+                                      255,
+                                      199,
+                                      141,
+                                      230,
+                                    ).withValues(alpha: 0.80),
                                   ],
                                 ),
                               ),

@@ -7,6 +7,7 @@ import '../widgets/background_blobs.dart';
 import 'doctor_list_screen.dart';
 import '../widgets/app_bottom_nav.dart';
 import '../widgets/notification_bell.dart';
+import '../widgets/page_top_bar.dart';
 
 const bool _hideInactiveDepartments = true;
 
@@ -53,29 +54,15 @@ class _DepartmentListScreenState extends State<DepartmentListScreen> {
             const BackgroundBlobs(),
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 14),
-                    Row(
-                      children: const [
-                        Expanded(
-                          child: Text(
-                            'Select Department',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                        ),
-                        NotificationBell(),
-                      ],
-                    ),
+                    
+
+                    const PageTopBar(title: 'Select Department'),
+
                     const SizedBox(height: 6),
                     Text(
                       'Choose a department to see available doctors',
