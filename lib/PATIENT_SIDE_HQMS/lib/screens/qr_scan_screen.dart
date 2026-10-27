@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/department_list_screen.dart';
@@ -22,7 +21,7 @@ class QRScanScreen extends StatefulWidget {
 class _QRScanScreenState extends State<QRScanScreen>
     with WidgetsBindingObserver {
   final MobileScannerController _controller = MobileScannerController();
-  final ImagePicker _picker = ImagePicker();
+
 
   bool _busy = false; // a scan is being verified
   bool _done = false; // verified, navigating away
@@ -70,24 +69,7 @@ class _QRScanScreenState extends State<QRScanScreen>
     _verify(code);
   }
 
-  Future<void> _pickFromGallery() async {
-    if (_busy || _done) return;
-    try {
-      final file = await _picker.pickImage(source: ImageSource.gallery);
-      if (file == null) return;
-      final capture = await _controller.analyzeImage(file.path);
-      final String? code = (capture != null && capture.barcodes.isNotEmpty)
-          ? capture.barcodes.first.rawValue
-          : null;
-      if (code == null || code.isEmpty) {
-        _fail('No QR code found in that image.');
-        return;
-      }
-      _verify(code);
-    } catch (_) {
-      _fail('Could not read that image. Please try again.');
-    }
-  }
+ 
 
   Future<void> _verify(String raw) async {
     if (_busy || _done) return;
@@ -243,36 +225,24 @@ class _QRScanScreenState extends State<QRScanScreen>
                   // Status: verifying / verified / error
                   _statusBanner(),
 
-                  // Torch + gallery
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ValueListenableBuilder<MobileScannerState>(
-                          valueListenable: _controller,
-                          builder: (context, state, _) {
-                            final on = state.torchState == TorchState.on;
-                            return _ActionButton(
-                              icon: on
-                                  ? Icons.flash_on_rounded
-                                  : Icons.flash_off_rounded,
-                              label: on ? 'Flash on' : 'Flash',
-                              onTap: (_done || !state.hasCameraPermission)
-                                  ? null
-                                  : () => _controller.toggleTorch(),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.photo_library_outlined,
-                          label: 'From gallery',
-                          onTap: (_busy || _done) ? null : _pickFromGallery,
-                        ),
-                      ),
-                    ],
-                  ),
+                 
+                // Torch
+                // Torch
+Center(
+  child: ValueListenableBuilder<MobileScannerState>(
+    valueListenable: _controller,
+    builder: (context, state, _) {
+      final on = state.torchState == TorchState.on;
+      return _ActionButton(
+        icon: on ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+        label: on ? 'Flash on' : 'Flash',
+        onTap: (_done || !state.hasCameraPermission)
+            ? null
+            : () => _controller.toggleTorch(),
+      );
+    },
+  ),
+),
                   const SizedBox(height: 20),
 
                   const HowToScanCard(),
@@ -416,28 +386,29 @@ class _ActionButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          height: 50,
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: AppColors.cardBorder),
             boxShadow: [
               BoxShadow(
                 color: AppColors.primary.withValues(alpha: .06),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: AppColors.primary, size: 20),
-              const SizedBox(width: 8),
+              Icon(icon, color: AppColors.primary, size: 17),
+              const SizedBox(width: 6),
               Text(
                 label,
                 style: const TextStyle(
-                  fontSize: 13.5,
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textDark,
                 ),
@@ -449,7 +420,6 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-
 class _PermissionCard extends StatelessWidget {
   const _PermissionCard();
 
@@ -486,8 +456,7 @@ class _PermissionCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Allow camera access to scan the hospital QR code. '
-            'You can also choose a QR image from your gallery.',
+            'Allow camera access to scan the hospital QR code. ',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
