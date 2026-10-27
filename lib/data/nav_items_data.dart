@@ -6,6 +6,7 @@ import 'package:queue_management_system/screens/department_management_page.dart'
 import 'package:queue_management_system/screens/doctor_management_page.dart';
 import 'package:queue_management_system/screens/patient_management_page.dart';
 import 'package:queue_management_system/screens/queue_management_page.dart';
+import 'package:queue_management_system/screens/hospital_qr_page.dart';
 
 
 final List<NavItem> navItems = [
@@ -49,6 +50,11 @@ NavItem(
     pageBuilder: () => const ReportsPage(),
   ),
 
+  NavItem(
+    title: "Hospital QR",
+    icon: Icons.qr_code_2_rounded,
+    pageBuilder: () => const HospitalQrPage(),
+  ),
  
 
 ];
