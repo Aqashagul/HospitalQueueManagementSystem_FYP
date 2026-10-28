@@ -156,16 +156,15 @@ class _OtpScreenState extends State<OtpScreen> {
       final db = FirebaseFirestore.instance;
 
       // Patient profile
-      final userRef = db.collection('users').doc(user.uid);
-      final userDoc = await userRef.get();
-      if (!userDoc.exists) {
-        await userRef.set({
-          'name': widget.userName,
-          'phone': user.phoneNumber,
-          'role': 'patient',
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+
+final userRef = db.collection('users').doc(user.uid);
+final userDoc = await userRef.get();
+await userRef.set({
+  'name': widget.userName,
+  'phone': user.phoneNumber,
+   if (!userDoc.exists) 'role': 'patient',
+  if (!userDoc.exists) 'createdAt': FieldValue.serverTimestamp()
+}, SetOptions(merge: true));
 
       try {
         await NotificationService.saveToken();

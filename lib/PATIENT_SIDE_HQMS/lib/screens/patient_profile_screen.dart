@@ -208,6 +208,9 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     );
     try {
          (await SharedPreferences.getInstance()).remove('active_entry_id');
+             final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('qr_verified');
+    await prefs.remove('active_entry_id');
       await _auth.signOut();
     } catch (_) {}
   }
