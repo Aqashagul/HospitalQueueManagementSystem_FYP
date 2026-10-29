@@ -11,6 +11,14 @@ import '../widgets/premium_button.dart';
 import 'welcome_screen.dart';
 import 'terms_conditions_screen.dart';
 import '../widgets/page_top_bar.dart';
+import 'package:queue_management_system/DOCTOR/role_gatway.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/qr_or_home_gate.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/splash_screen.dart';
+import 'package:queue_management_system/DOCTOR/app_user.dart';
+
+
+
+
 
 class PatientProfileScreen extends StatefulWidget {
   const PatientProfileScreen({super.key});
@@ -201,18 +209,24 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     );
     if (ok != true || !mounted) return;
 
-    final navigator = Navigator.of(context);
+      final navigator = Navigator.of(context);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('qr_verified');
+      await prefs.remove('active_entry_id');
+      await _auth.signOut();
+      await RoleStorage.clear(); 
+    } catch (_) {}
+
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+      MaterialPageRoute(
+        builder: (_) => PatientRoleGate(
+          splashScreen: SplashScreen(),
+          qrScreen: const QrOrHomeGate(),
+        ),
+      ),
       (route) => false,
     );
-    try {
-         (await SharedPreferences.getInstance()).remove('active_entry_id');
-             final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('qr_verified');
-    await prefs.remove('active_entry_id');
-      await _auth.signOut();
-    } catch (_) {}
   }
 
   @override
