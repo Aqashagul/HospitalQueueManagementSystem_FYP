@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/department_list_screen.dart';
 import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
@@ -21,7 +22,6 @@ class QRScanScreen extends StatefulWidget {
 class _QRScanScreenState extends State<QRScanScreen>
     with WidgetsBindingObserver {
   final MobileScannerController _controller = MobileScannerController();
-
 
   bool _busy = false; // a scan is being verified
   bool _done = false; // verified, navigating away
@@ -69,8 +69,6 @@ class _QRScanScreenState extends State<QRScanScreen>
     _verify(code);
   }
 
- 
-
   Future<void> _verify(String raw) async {
     if (_busy || _done) return;
     setState(() {
@@ -78,7 +76,7 @@ class _QRScanScreenState extends State<QRScanScreen>
       _error = null;
     });
 
-    // 1. Format check
+    // 1. Format check: hqms://join?v=1&s=SECRET
     final Uri? uri = Uri.tryParse(raw.trim());
     if (uri == null ||
         uri.scheme != 'hqms' ||
@@ -109,7 +107,8 @@ class _QRScanScreenState extends State<QRScanScreen>
 
       if (scannedSecret != realSecret) {
         if (scannedVersion != null && scannedVersion < realVersion) {
-          _fail('This QR code is outdated. Please scan the new one at reception.');
+          _fail(
+              'This QR code is outdated. Please scan the new one at reception.');
         } else {
           _fail('Invalid QR code. Please scan the hospital QR at reception.');
         }
@@ -144,6 +143,12 @@ class _QRScanScreenState extends State<QRScanScreen>
       _done = true;
       _error = null;
     });
+
+    // Remember that this phone scanned the hospital QR, so the next app
+    // launch opens Home directly instead of the scan screen.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('qr_verified', true);
+
     await _controller.stop();
     await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted) return;
@@ -225,24 +230,24 @@ class _QRScanScreenState extends State<QRScanScreen>
                   // Status: verifying / verified / error
                   _statusBanner(),
 
-                 
-                // Torch
-                // Torch
-Center(
-  child: ValueListenableBuilder<MobileScannerState>(
-    valueListenable: _controller,
-    builder: (context, state, _) {
-      final on = state.torchState == TorchState.on;
-      return _ActionButton(
-        icon: on ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-        label: on ? 'Flash on' : 'Flash',
-        onTap: (_done || !state.hasCameraPermission)
-            ? null
-            : () => _controller.toggleTorch(),
-      );
-    },
-  ),
-),
+                  // Flash (small pill, centered)
+                  Center(
+                    child: ValueListenableBuilder<MobileScannerState>(
+                      valueListenable: _controller,
+                      builder: (context, state, _) {
+                        final on = state.torchState == TorchState.on;
+                        return _ActionButton(
+                          icon: on
+                              ? Icons.flash_on_rounded
+                              : Icons.flash_off_rounded,
+                          label: on ? 'Flash on' : 'Flash',
+                          onTap: (_done || !state.hasCameraPermission)
+                              ? null
+                              : () => _controller.toggleTorch(),
+                        );
+                      },
+                    ),
+                  ),
                   const SizedBox(height: 20),
 
                   const HowToScanCard(),
@@ -308,7 +313,7 @@ Center(
       );
     }
     if (_busy) {
-      return _Banner(
+      return const _Banner(
         color: AppColors.primary,
         icon: Icons.hourglass_top_rounded,
         text: 'Verifying QR code...',
@@ -348,7 +353,8 @@ class _Banner extends StatelessWidget {
               ? SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2.4, color: color),
+                  child:
+                      CircularProgressIndicator(strokeWidth: 2.4, color: color),
                 )
               : Icon(icon, color: color, size: 20),
           const SizedBox(width: 10),
@@ -420,6 +426,7 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
+
 class _PermissionCard extends StatelessWidget {
   const _PermissionCard();
 
@@ -456,7 +463,7 @@ class _PermissionCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Allow camera access to scan the hospital QR code. ',
+            'Allow camera access to scan the hospital QR code at reception.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,

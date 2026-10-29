@@ -13,6 +13,8 @@ import 'package:queue_management_system/notification_service.dart';
 import 'package:queue_management_system/screens/auth/login_page.dart';
 import 'package:queue_management_system/screens/layout/app_shell.dart';
 import 'firebase_options.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/qr_or_home_gate.dart';
+
 
 
 Future<void> main() async {
@@ -87,7 +89,7 @@ class PatientApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       home: PatientRoleGate(
         splashScreen: SplashScreen(),
-        qrScreen: const QRScanScreen(),
+        qrScreen: const QrOrHomeGate(),
       ),
     );
   }

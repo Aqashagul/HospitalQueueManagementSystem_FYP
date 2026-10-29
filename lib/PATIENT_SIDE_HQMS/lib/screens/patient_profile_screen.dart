@@ -207,7 +207,11 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
       (route) => false,
     );
     try {
-         (await SharedPreferences.getInstance()).remove('active_entry_id');
+      // Forget the QR verification and any active queue entry, so the next
+      // login starts from the scan screen again.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('qr_verified');
+      await prefs.remove('active_entry_id');
       await _auth.signOut();
     } catch (_) {}
   }
@@ -241,7 +245,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                     const PageTopBar(title: 'Profile', showBell: false),
+                      const PageTopBar(title: 'Profile', showBell: false),
                       const SizedBox(height: 18),
 
                       // ---- Header card ----
@@ -407,7 +411,6 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                               ),
                             ),
                           ),
-                        
                         ],
                       ),
                       const SizedBox(height: 26),
