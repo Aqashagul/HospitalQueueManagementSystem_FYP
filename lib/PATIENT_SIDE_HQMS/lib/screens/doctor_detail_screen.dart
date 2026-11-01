@@ -16,6 +16,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/app_back_button.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+
 
 class DoctorDetailScreen extends StatefulWidget {
   final Doctor doctor;
@@ -156,6 +159,80 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
     );
   }
 
+  // Friendly message box (easier to notice than a snackbar).
+  Future<void> _showInfoDialog(String title, String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        icon: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.primary.withValues(alpha: .1),
+          ),
+          child: const Icon(Icons.info_outline_rounded,
+              color: AppColors.primary, size: 30),
+        ),
+        title: Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(height: 1.5, color: AppColors.textGrey),
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              child: const Text('OK'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // True (and shows a message) when the patient already holds an active
+  // token today. Read only, the real rule is still enforced in QueueService.
+  Future<bool> _blockedByActiveToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    final snap = await FirebaseFirestore.instance
+        .collection('queue_entries')
+        .where('patientId', isEqualTo: user.uid)
+        .where('dayKey', isEqualTo: QueueService.dayKeyOf(DateTime.now()))
+        .get();
+
+    for (final d in snap.docs) {
+      final data = d.data();
+      if (QueueService.isActiveStatus(data['status']?.toString())) {
+        final doctor = data['doctorName']?.toString() ?? 'a doctor';
+        final token = data['token']?.toString() ?? '';
+        if (!mounted) return true;
+        await _showInfoDialog(
+          'Queue already joined',
+          'You have already joined $doctor\'s queue'
+          '${token.isEmpty ? '' : ' (token $token)'}.\n\n'
+          'You cannot join another doctor\'s queue until that token is '
+          'completed or you leave that queue.',
+        );
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Asks for confirmation, then creates the real token in Firestore and
   // opens the success screen with the result.
   Future<void> _handleJoinQueue() async {
@@ -163,6 +240,8 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
     setState(() => _joining = true);
 
     try {
+       // Already holding a token with a doctor? Tell the patient and stop.
+      if (await _blockedByActiveToken()) return;
       final Doctor doctor = await _freshDoctor();
       if (!mounted) return;
 
@@ -187,9 +266,7 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
       final message = e is StateError
           ? e.message
           : 'Could not join the queue. Please try again.';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+                await _showInfoDialog('Could not join', message);
     } finally {
       if (mounted) setState(() => _joining = false);
     }

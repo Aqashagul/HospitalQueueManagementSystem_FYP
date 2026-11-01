@@ -6,6 +6,7 @@ import 'app_user.dart';
 import 'doctor_dashboard.dart';
 import 'doctor_login_screen.dart';
 import 'role_selection_screen.dart';
+import 'package:queue_management_system/DOCTOR/role_gatway.dart';
 
 
 
@@ -142,6 +143,7 @@ class _PatientRoleGateState extends State<PatientRoleGate> {
     var saved = await RoleStorage.read();
     final current = auth.currentUser;
     final isPhoneUser = current?.phoneNumber != null;
+    debugPrint('GATE saved=$saved uid=${current?.uid} email=${current?.email} phone=${current?.phoneNumber}');
 
     // Patients who verified their phone before roles existed.
     if (saved == null && isPhoneUser) {
@@ -156,6 +158,7 @@ class _PatientRoleGateState extends State<PatientRoleGate> {
     } else if (saved == UserRole.doctor) {
       if (current != null && !isPhoneUser) {
         final user = await fetchAppUser(current.uid);
+        debugPrint('GATE user=${user?.role} doctorId=${user?.doctorId} disabled=${user?.disabled}');
         if (user?.role == UserRole.doctor &&
             user?.doctorId != null &&
             !(user?.disabled ?? false)) {
