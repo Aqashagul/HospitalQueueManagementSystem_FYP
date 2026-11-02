@@ -10,6 +10,7 @@ import 'package:queue_management_system/DOCTOR/role_gatway.dart';
 
 
 
+
 /// Reads users/{uid}. Returns null if the document does not exist.
 Future<AppUser?> fetchAppUser(String uid) async {
   final snap =
@@ -127,6 +128,7 @@ class PatientRoleGate extends StatefulWidget {
 class _PatientRoleGateState extends State<PatientRoleGate> {
   _Step _step = _Step.loading;
   String? _doctorId;
+  
 
   @override
   void initState() {
@@ -138,12 +140,48 @@ class _PatientRoleGateState extends State<PatientRoleGate> {
     if (mounted) setState(() => _step = s);
   }
 
+  // Future<void> _decide() async {
+  //   final auth = FirebaseAuth.instance;
+  //   var saved = await RoleStorage.read();
+  //   final current = auth.currentUser;
+  //   final isPhoneUser = current?.phoneNumber != null;
+  //   debugPrint('GATE saved=$saved uid=${current?.uid} email=${current?.email} phone=${current?.phoneNumber}');
+
+  //   // Patients who verified their phone before roles existed.
+  //   if (saved == null && isPhoneUser) {
+  //     await RoleStorage.save(UserRole.patient);
+  //     saved = UserRole.patient;
+  //   }
+
+  //   if (saved == UserRole.patient) {
+  //     // A leftover doctor (email) session must not open the patient flow.
+  //     if (current != null && !isPhoneUser) await auth.signOut();
+  //     _go(_Step.patient);
+  //   } else if (saved == UserRole.doctor) {
+  //     if (current != null && !isPhoneUser) {
+  //       final user = await fetchAppUser(current.uid);
+  //       debugPrint('GATE user=${user?.role} doctorId=${user?.doctorId} disabled=${user?.disabled}');
+  //       if (user?.role == UserRole.doctor &&
+  //           user?.doctorId != null &&
+  //           !(user?.disabled ?? false)) {
+  //         _doctorId = user!.doctorId;
+  //         _go(_Step.doctorHome);
+  //         return;
+  //       }
+  //       await auth.signOut();
+  //     }
+  //     _go(_Step.doctorLogin);
+  //   } else {
+  //     _go(_Step.selection);
+  //   }
+  // }
   Future<void> _decide() async {
     final auth = FirebaseAuth.instance;
     var saved = await RoleStorage.read();
     final current = auth.currentUser;
-    final isPhoneUser = current?.phoneNumber != null;
-    debugPrint('GATE saved=$saved uid=${current?.uid} email=${current?.email} phone=${current?.phoneNumber}');
+        final isPhoneUser = (current?.phoneNumber ?? '').isNotEmpty;
+
+       
 
     // Patients who verified their phone before roles existed.
     if (saved == null && isPhoneUser) {
@@ -151,23 +189,40 @@ class _PatientRoleGateState extends State<PatientRoleGate> {
       saved = UserRole.patient;
     }
 
+    // An email session (doctor) is still logged in: trust Firestore, not the
+    // saved role. This is what keeps the doctor logged in after the app is
+    // closed completely.
+    if (current != null && !isPhoneUser && saved != UserRole.patient) {
+      try {
+        final user =
+            await fetchAppUser(current.uid).timeout(const Duration(seconds: 10));
+          
+
+        if (user?.role == UserRole.doctor &&
+            user?.doctorId != null &&
+            !(user?.disabled ?? false)) {
+          await RoleStorage.save(UserRole.doctor);
+          _doctorId = user!.doctorId;
+          _go(_Step.doctorHome);
+          return;
+        }
+        // Firestore clearly says: not a doctor / removed. Only then sign out.
+        await auth.signOut();
+        _go(_Step.doctorLogin);
+        return;
+      } catch (e) {
+        // Slow or no internet: do NOT sign the doctor out.
+             
+        _go(_Step.doctorLogin);
+        return;
+      }
+    }
+
     if (saved == UserRole.patient) {
       // A leftover doctor (email) session must not open the patient flow.
       if (current != null && !isPhoneUser) await auth.signOut();
       _go(_Step.patient);
     } else if (saved == UserRole.doctor) {
-      if (current != null && !isPhoneUser) {
-        final user = await fetchAppUser(current.uid);
-        debugPrint('GATE user=${user?.role} doctorId=${user?.doctorId} disabled=${user?.disabled}');
-        if (user?.role == UserRole.doctor &&
-            user?.doctorId != null &&
-            !(user?.disabled ?? false)) {
-          _doctorId = user!.doctorId;
-          _go(_Step.doctorHome);
-          return;
-        }
-        await auth.signOut();
-      }
       _go(_Step.doctorLogin);
     } else {
       _go(_Step.selection);
@@ -189,9 +244,10 @@ class _PatientRoleGateState extends State<PatientRoleGate> {
             ? widget.qrScreen
             : widget.splashScreen;
 
-      case _Step.doctorLogin:
+            case _Step.doctorLogin:
         return DoctorLoginScreen(
-          onLoggedIn: (user) {
+          onLoggedIn: (user) async {
+            await RoleStorage.save(UserRole.doctor);
             _doctorId = user.doctorId;
             _go(_Step.doctorHome);
           },
@@ -200,6 +256,19 @@ class _PatientRoleGateState extends State<PatientRoleGate> {
             _go(_Step.selection);
           },
         );
+        //    case _Step.doctorLogin:
+        // return DoctorLoginScreen(
+        //   onLoggedIn: (user) {
+        //     _doctorId = user.doctorId;
+        //     _go(_Step.doctorHome);
+        //   },
+
+
+        //   onBack: () async {
+        //     await RoleStorage.clear();
+        //     _go(_Step.selection);
+        //   },
+        // );
 
       case _Step.doctorHome:
         return DoctorDashboard(

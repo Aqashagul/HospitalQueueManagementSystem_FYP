@@ -26,6 +26,8 @@ Future<void> main() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
   await NotificationService.init();
+
+
   if (FirebaseAuth.instance.currentUser != null) {
     NotificationService.saveToken().catchError((_) {});
   }
