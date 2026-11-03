@@ -384,13 +384,14 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
             child: Column(
               children: [
                 // ---- Top bar: back + bell ----
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
-                  child: Row(
-                    children: [AppBackButton(), Spacer(), NotificationBell()],
-                  ),
-                ),
-
+               const Padding(
+  padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
+  child: Row(
+    children: [
+      AppBackButton(),
+    ],
+  ),
+),
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(
