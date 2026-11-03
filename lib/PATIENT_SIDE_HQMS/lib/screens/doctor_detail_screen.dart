@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/payment_pending_screen.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/payment_service.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/queue_service.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/models/doctor_model.dart';
@@ -11,11 +13,10 @@ import '../widgets/available_timing_card.dart';
 import '../widgets/about_doctor_card.dart';
 import '../widgets/join_queue_dialog.dart';
 import '../models/doctor.dart';
-import 'queue_success_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/app_back_button.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 
 class DoctorDetailScreen extends StatefulWidget {
   final Doctor doctor;
@@ -156,8 +157,9 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
     );
   }
 
-  // Asks for confirmation, then creates the real token in Firestore and
-  // opens the success screen with the result.
+  // Asks for confirmation, then creates a payment request and opens the
+  // payment screen. The token is created there, after the admin confirms
+  // the payment (or accepts an emergency request).
   Future<void> _handleJoinQueue() async {
     if (_joining) return;
     setState(() => _joining = true);
@@ -169,24 +171,21 @@ class _DoctorDetailScreenState extends State<DoctorDetailScreen> {
       final bool? confirmed = await showJoinQueueDialog(context, doctor);
       if (confirmed != true || !mounted) return;
 
-      // Saves the token, doctor and department in Firestore.
-      final result = await QueueService().joinQueue(doctor);
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('active_entry_id', result.entryId);
-
-      
+      // Creates the payment request (or returns the open one).
+      final paymentId = await PaymentService().startRequest(doctor);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
+
+      Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => QueueSuccessScreen(doctor: doctor, result: result),
+          builder: (_) =>
+              PaymentPendingScreen(doctor: doctor, paymentId: paymentId),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       final message = e is StateError
           ? e.message
-          : 'Could not join the queue. Please try again.';
+          : 'Could not send your request. Please try again.';
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));

@@ -1,27 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/call_patient.dart';
-import 'confirm_action_dialog.dart';
 
-// What happened to the patient, in words, for the popup.
-String _actionText(String type) {
-  switch (type) {
-    case 'called':
-      return 'was called in';
-    case 'completed':
-      return 'was marked as completed';
-    case 'skipped':
-      return 'was moved down the queue';
-    case 'cancelled':
-      return 'was removed from the queue';
-    default:
-      return 'was updated';
-  }
-}
+
+// notifyAndReport: REPLACE the old function with this one, and DELETE the
+// small `_actionText(String type)` function above it (it is not used any more).
 
 /// Sends the notification and tells the admin what happened:
 ///  - sent: nothing to show.
-///  - the patient cannot be reached through the app (app deleted, phone not
-///    set up): a popup with the patient's details and a Call Now button.
+///  - the patient cannot be reached through the app (app deleted, logged out,
+///    phone not set up): nothing is shown at all. The queue action itself
+///    already worked.
 ///  - no internet / server problem: an orange message with a Retry button.
 ///  - anything else: an orange message.
 ///
@@ -45,19 +33,8 @@ Future<void> notifyAndReport(
 
   if (result.sent || !context.mounted) return;
 
-  // The patient cannot be reached through the app: show who they are and
-  // how to call them.
-  if (result.patientUnreachable) {
-    await showPatientUnreachableDialog(
-      context,
-      patientName: patientName,
-      token: token,
-      phone: phone.isNotEmpty ? phone : (result.phone ?? ''),
-      actionText: _actionText(type),
-      appRemoved: result.status == NotifyStatus.appRemoved,
-    );
-    return;
-  }
+  // App deleted / logged out / phone not set up for notifications: stay quiet.
+  if (result.patientUnreachable) return;
 
   // Everything else: a message, with Retry when trying again can help.
   ScaffoldMessenger.of(context)

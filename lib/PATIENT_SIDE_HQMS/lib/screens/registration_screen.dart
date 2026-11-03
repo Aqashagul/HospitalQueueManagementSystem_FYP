@@ -4,7 +4,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/otp_screen.dart';
-import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/qr_scan_screen.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/terms_conditions_screen.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/widgets/premium_text_field.dart';
 import '../utils/app_theme.dart';

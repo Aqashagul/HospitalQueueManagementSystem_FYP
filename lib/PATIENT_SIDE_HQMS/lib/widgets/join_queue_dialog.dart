@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:queue_management_system/widgets/doctor_photo.dart';
 import '../models/doctor.dart';
 import '../utils/app_theme.dart';
 

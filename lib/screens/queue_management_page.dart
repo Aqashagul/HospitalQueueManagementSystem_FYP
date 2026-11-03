@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:queue_management_system/call_patient.dart';
 import 'package:queue_management_system/core/app_color.dart';
 import 'package:queue_management_system/core/app_typography.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
@@ -12,13 +11,11 @@ import 'package:queue_management_system/screens/doctor_queue_page.dart';
 import 'package:queue_management_system/screens/queue_admin_service.dart';
 import 'package:queue_management_system/widgets/doctor_image.dart';
 import 'package:queue_management_system/widgets/loading_or_offline.dart';
+import 'package:queue_management_system/widgets/notify_report.dart';
 import 'package:queue_management_system/widgets/resuable/bg_boxes.dart';
 import 'package:queue_management_system/widgets/resuable/dashboard_searchbar.dart';
 import 'package:queue_management_system/widgets/resuable/live_date_time_widget.dart';
 import 'package:queue_management_system/widgets/resuable/rounded_card.dart';
-
-
-
 
 class QueueManagementPage extends StatefulWidget {
   const QueueManagementPage({super.key});
@@ -33,7 +30,7 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
 
   // Reads today's queue from Firestore and performs the admin actions.
   final QueueAdminService _service = QueueAdminService();
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
+  late final Stream<QueueWindow> _stream;
 
   // Doctor whose action (Call Next / Complete) is currently running.
   String? _busyDoctorName;
@@ -47,7 +44,10 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
   @override
   void initState() {
     super.initState();
-    _stream = _service.watchTodaysEntries();
+    _stream = _service.watchQueueWindow();
+    // Tokens that were never finished and are older than 24 hours are closed
+    // ("Expired"). Fails quietly if the network is down.
+    _service.expireStaleEntries().catchError((_) => 0);
     // Doctors/departments come from the store; refresh when they change.
     AppdataStore().addListener(_onStoreChanged);
 
@@ -55,15 +55,15 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
         .collection('doctor_presence')
         .snapshots()
         .listen((snap) {
-      if (!mounted) return;
-      setState(() {
-        _lastSeen.clear();
-        for (final d in snap.docs) {
-          final v = d.data()['lastSeen'];
-          if (v is Timestamp) _lastSeen[d.id] = v.toDate();
-        }
-      });
-    }, onError: (_) {});
+          if (!mounted) return;
+          setState(() {
+            _lastSeen.clear();
+            for (final d in snap.docs) {
+              final v = d.data()['lastSeen'];
+              if (v is Timestamp) _lastSeen[d.id] = v.toDate();
+            }
+          });
+        }, onError: (_) {});
     // A doctor who closed the app drops off after a few minutes.
     _presenceTicker = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
@@ -140,18 +140,12 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
   Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _currentEntryOf(
     String doctorId,
   ) async {
-    final snap = await _service.watchTodaysEntries().first;
-    final current =
-        snap.docs.where((d) {
-          return d.data()['doctorId'] == doctorId &&
-              QueueAdminService.normalizeStatus(
-                    d.data()['status']?.toString(),
-                  ) ==
-                  'In Consultation';
-        }).toList()..sort(
-          (a, b) =>
-              QueueAdminService.seqOf(a).compareTo(QueueAdminService.seqOf(b)),
-        );
+    final snap = await _service.watchQueueWindow().first;
+    final current = snap.docs.where((d) {
+      return d.data()['doctorId'] == doctorId &&
+          QueueAdminService.normalizeStatus(d.data()['status']?.toString()) ==
+              'In Consultation';
+    }).toList()..sort(QueueAdminService.queueOrder);
     return current.isEmpty ? null : current.first;
   }
 
@@ -162,16 +156,25 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
     // nobody is "In Consultation" any more.
     final doctorId = _doctorIdFor(doctorName);
     String? entryId;
+    Map<String, dynamic> served = {};
     if (doctorId != null) {
       try {
-        entryId = (await _currentEntryOf(doctorId))?.id;
+        final current = await _currentEntryOf(doctorId);
+        entryId = current?.id;
+        served = current?.data() ?? {};
       } catch (_) {}
     }
 
     final ok = await _runAction(doctorName, _service.completeCurrent);
-    if (ok && entryId != null) {
-      final note = await notifyPatient(entryId, 'completed');
-      if (note != null) _showSnack(note);
+    if (ok && entryId != null && mounted) {
+      await notifyAndReport(
+        context,
+        entryId,
+        'completed',
+        patientName: served['patientName']?.toString() ?? '',
+        token: served['token']?.toString() ?? '',
+        phone: served['phone']?.toString() ?? '',
+      );
     }
   }
 
@@ -188,10 +191,17 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
 
     try {
       final current = await _currentEntryOf(doctorId);
-      if (current == null) return;
+      if (current == null || !mounted) return;
 
-      final note = await notifyCalledPatient(current.id);
-      if (note != null) _showSnack(note);
+      final data = current.data();
+      await notifyAndReport(
+        context,
+        current.id,
+        'called',
+        patientName: data['patientName']?.toString() ?? '',
+        token: data['token']?.toString() ?? '',
+        phone: data['phone']?.toString() ?? '',
+      );
     } catch (_) {
       // Notification fail ho to Call Next phir bhi ho chuka hota hai
     }
@@ -215,11 +225,8 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
           QueueAdminService.normalizeStatus(d.data()['status']?.toString());
 
       final inConsultation =
-          mine.where((d) => statusOf(d) == 'In Consultation').toList()..sort(
-            (a, b) => QueueAdminService.seqOf(
-              a,
-            ).compareTo(QueueAdminService.seqOf(b)),
-          );
+          mine.where((d) => statusOf(d) == 'In Consultation').toList()
+            ..sort(QueueAdminService.queueOrder);
 
       final waitingCount = mine.where((d) => statusOf(d) == 'Waiting').length;
       final completedCount = mine
@@ -274,6 +281,28 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
     });
 
     return ranked.map((r) => r.queue).toList();
+  }
+
+  // When each doctor's current consultation started (doctorId -> calledAt),
+  // used for the session timer on the card.
+  Map<String, DateTime> _sessionStarts(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final result = <String, DateTime>{};
+    final current = docs.where((d) {
+      return QueueAdminService.normalizeStatus(
+            d.data()['status']?.toString(),
+          ) ==
+          'In Consultation';
+    }).toList()..sort(QueueAdminService.queueOrder);
+    for (final d in current) {
+      final id = d.data()['doctorId']?.toString();
+      final t = d.data()['calledAt'];
+      if (id != null && t is Timestamp && !result.containsKey(id)) {
+        result[id] = t.toDate();
+      }
+    }
+    return result;
   }
 
   // Applies the search text and the department filter.
@@ -334,7 +363,7 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
                     const SizedBox(height: 24),
 
                     // Doctor queue cards, live from Firestore
-                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    StreamBuilder<QueueWindow>(
                       stream: _stream,
                       builder: (context, snapshot) {
                         if (snapshot.hasError) {
@@ -353,21 +382,23 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
                             ),
                           );
                         }
-                       
 
-                        if (!snapshot.hasData || !AppdataStore().doctorsLoaded) {
-  return const Padding(
-    padding: EdgeInsets.symmetric(vertical: 40),
-    child: LoadingOrOffline(message: "Loading..."),
-  );
-}
-
+                        if (!snapshot.hasData ||
+                            !AppdataStore().doctorsLoaded) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 40),
+                            child: LoadingOrOffline(message: "Loading..."),
+                          );
+                        }
 
                         final visible = _applyFilters(
                           _buildQueues(snapshot.data!.docs),
                         );
+                        final sessionStarts = _sessionStarts(
+                          snapshot.data!.docs,
+                        );
 
-                                                 if (visible.isEmpty) {
+                        if (visible.isEmpty) {
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 24),
                             child: Center(
@@ -402,6 +433,8 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
                                 isMobile: isMobile,
                                 isBusy: _busyDoctorName != null,
                                 doctorOnline: _isDoctorOnline(queue.name),
+                                sessionSince:
+                                    sessionStarts[_doctorIdFor(queue.name)],
                                 onComplete: () => _handleComplete(queue.name),
                                 onCallNext: () => _handleCallNext(queue.name),
                                 // Everything is live now, nothing to refresh.
@@ -507,6 +540,22 @@ class _QueueManagementPageState extends State<QueueManagementPage> {
   }
 }
 
+// A time span that is easy to read: "45 sec", "12 min", "5 h 12 min", "2 d 3 h".
+String _formatSession(Duration d) {
+  final seconds = d.isNegative ? 0 : d.inSeconds;
+  if (seconds < 60) return '$seconds sec';
+  final minutes = seconds ~/ 60;
+  if (minutes < 60) return '$minutes min';
+  final hours = minutes ~/ 60;
+  final restMinutes = minutes % 60;
+  if (hours < 24) {
+    return restMinutes == 0 ? '$hours h' : '$hours h $restMinutes min';
+  }
+  final days = hours ~/ 24;
+  final restHours = hours % 24;
+  return restHours == 0 ? '$days d' : '$days d $restHours h';
+}
+
 // A doctor's queue status plus what is needed to rank it in the list.
 class _RankedQueue {
   final DoctorQueueStatus queue;
@@ -528,6 +577,7 @@ class _DoctorQueueCard extends StatefulWidget {
   final bool isMobile;
   final bool isBusy; // an action is running; buttons are disabled
   final bool doctorOnline; // the doctor's own app is open right now
+  final DateTime? sessionSince; // when the current consultation started
   final VoidCallback onComplete;
   final VoidCallback onCallNext;
   final VoidCallback onReturn;
@@ -537,6 +587,7 @@ class _DoctorQueueCard extends StatefulWidget {
     required this.isMobile,
     required this.isBusy,
     this.doctorOnline = false,
+    this.sessionSince,
     required this.onComplete,
     required this.onCallNext,
     required this.onReturn,
@@ -622,7 +673,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
         ),
 
         // Live stats: current token, patients waiting, completed today
-        _buildStatBlock("CURRENT", widget.queue.currentToken ?? "--"),
+        _buildCurrentBlock(),
         const SizedBox(width: 32),
         _buildStatBlock("WAITING", "${widget.queue.waitingCount}"),
         const SizedBox(width: 32),
@@ -698,12 +749,7 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
         const SizedBox(height: 16),
         Row(
           children: [
-            Expanded(
-              child: _buildStatBlock(
-                "CURRENT",
-                widget.queue.currentToken ?? "--",
-              ),
-            ),
+            Expanded(child: _buildCurrentBlock()),
             Expanded(
               child: _buildStatBlock("WAITING", "${widget.queue.waitingCount}"),
             ),
@@ -742,6 +788,46 @@ class _DoctorQueueCardState extends State<_DoctorQueueCard> {
           ],
         ),
       ],
+    );
+  }
+
+  // CURRENT token, with how long this consultation has been running.
+  Widget _buildCurrentBlock() {
+    final since = widget.sessionSince;
+    return SizedBox(
+      width: 70,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "CURRENT",
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade500,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.queue.currentToken ?? "--",
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          if (since != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              _formatSession(DateTime.now().difference(since)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF2E7D32),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

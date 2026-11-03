@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/payment_history_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/app_theme.dart';
 import '../widgets/app_bottom_nav.dart';
@@ -11,6 +12,10 @@ import '../widgets/premium_button.dart';
 import 'welcome_screen.dart';
 import 'terms_conditions_screen.dart';
 import '../widgets/page_top_bar.dart';
+
+// >>> Add at the top with your other imports:
+//   import 'payment_history_screen.dart';   // adjust the path
+
 
 class PatientProfileScreen extends StatefulWidget {
   const PatientProfileScreen({super.key});
@@ -348,6 +353,25 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                             ),
                             onTap: () => _snack(
                               'Phone number cannot be changed after verification',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+
+                      // ---- Payments ----
+                      const _SectionTitle('Payments'),
+                      _Section(
+                        children: [
+                          _Tile(
+                            icon: Icons.receipt_long_outlined,
+                            title: 'Payments & Receipts',
+                            subtitle: 'View and download your receipts',
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PaymentHistoryScreen(),
+                              ),
                             ),
                           ),
                         ],
@@ -693,7 +717,7 @@ class _Tile extends StatelessWidget {
                   ],
                 ),
               ),
-              if (trailing != null) trailing!,
+              ?trailing,
             ],
           ),
         ),
