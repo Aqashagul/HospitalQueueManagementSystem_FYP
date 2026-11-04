@@ -679,7 +679,7 @@ class _DepartmentManagementPageState extends State<DepartmentManagementPage> {
                 width: isMobile ? 220 : 380,
                 fit: BoxFit.contain,
                 // Until the picture file is added, an icon is shown instead.
-                errorBuilder: (_, __, ___) => Icon(
+                errorBuilder: (_, _, _) => Icon(
                   Icons.apartment_outlined,
                   size: 96,
                   color: Colors.grey.shade300,

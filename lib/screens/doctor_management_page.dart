@@ -35,7 +35,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
   // Today's queue entries of ALL doctors, live from Firestore. The
   // "Patients" column and the "Free" card are worked out from these.
   final QueueAdminService _queueService = QueueAdminService();
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _entriesSub;
+  StreamSubscription<QueueWindow>? _entriesSub;
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _todayEntries = [];
 
   @override
@@ -54,7 +54,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     AppdataStore().addListener(_onStoreChanged);
 
     // Live queue data for the Patients column.
-    _entriesSub = _queueService.watchTodaysEntries().listen(
+    _entriesSub = _queueService.watchQueueWindow().listen(
       (snap) {
         if (!mounted) return;
         setState(() => _todayEntries = snap.docs);
@@ -136,12 +136,6 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     );
   }
 
-  // Today's key like "20261014", same format the patient app writes.
-  String _todayKey() {
-    final d = DateTime.now();
-    return '${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
-  }
-
   bool _isActiveStatus(String? raw) {
     switch ((raw ?? '').toLowerCase()) {
       case 'waiting':
@@ -154,18 +148,12 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
     }
   }
 
-  // Counts today's Waiting / In Consultation patients for this doctor
-  // straight from Firestore (queue_entries). Reads from the server, so if
-  // the network is down it throws instead of silently returning 0.
-  Future<int> _firestoreActivePatients(String doctorId) async {
-    final snap = await FirebaseFirestore.instance
-        .collection('queue_entries')
-        .where('doctorId', isEqualTo: doctorId)
-        .where('dayKey', isEqualTo: _todayKey())
-        .get(const GetOptions(source: Source.server));
-    return snap.docs
-        .where((d) => _isActiveStatus(d.data()['status']?.toString()))
-        .length;
+  // Counts this doctor's Waiting / In Consultation patients (today, plus
+  // late-night patients from the day before whose token is still valid)
+  // straight from Firestore. Reads from the server, so if the network is
+  // down it throws instead of silently returning 0.
+  Future<int> _firestoreActivePatients(String doctorId) {
+    return _queueService.activePatientCount(doctorId);
   }
 
   // Popup shown when a doctor cannot be deleted because patients are still
@@ -1088,7 +1076,7 @@ class _DoctorManagementPageState extends State<DoctorManagementPage> {
                 width: isMobile ? 220 : 380,
                 fit: BoxFit.contain,
                 // Until the picture file is added, an icon is shown instead.
-                errorBuilder: (_, __, ___) => Icon(
+                errorBuilder: (_, _, _) => Icon(
                   Icons.medical_services_outlined,
                   size: 96,
                   color: Colors.grey.shade300,

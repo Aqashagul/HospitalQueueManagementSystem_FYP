@@ -6,7 +6,6 @@ import '../utils/app_theme.dart';
 import '../widgets/background_blobs.dart';
 import 'doctor_list_screen.dart';
 import '../widgets/app_bottom_nav.dart';
-import '../widgets/notification_bell.dart';
 import '../widgets/page_top_bar.dart';
 
 const bool _hideInactiveDepartments = true;

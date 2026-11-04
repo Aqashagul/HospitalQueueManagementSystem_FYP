@@ -51,7 +51,7 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
   @override
   void initState() {
     super.initState();
-    _entriesStream = _queueService.watchTodaysEntries(widget.doctor.id);
+    _entriesStream = _queueService.watchActiveEntries(widget.doctor.id);
   }
 
   // ---------------------------------------------------------------------------
@@ -144,19 +144,24 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
                     );
                   }
 
-                  final docs = snapshot.data!.docs;
+                  // Today's patients plus earlier-day patients whose token
+                  // is still valid (24 hours).
+                  final docs =
+                      snapshot.data!.docs.where(QueueService.inWindow).toList();
 
                   // Find this patient's own entry.
                   QueryDocumentSnapshot<Map<String, dynamic>>? mine;
                   for (final d in docs) {
                     if (d.id == widget.entryId) mine = d;
                   }
-                  if (mine == null) {
+                  if (mine == null ||
+                      QueueService.isExpiredStatus(
+                        mine.data()['status']?.toString(),
+                      )) {
                     return QueueEntryMissingView(onHome: _goHome);
                   }
 
                   final myData = mine.data();
-                  final int mySeq = (myData['seq'] as int?) ?? 0;
                   final String? myStatus = myData['status']?.toString();
                   final String myToken = myData['token']?.toString() ?? '--';
 
@@ -167,10 +172,9 @@ class _TrackQueueScreenState extends State<TrackQueueScreen> {
                           ))
                       .toList();
 
-                  final int ahead = active.where((d) {
-                    final s = d.data()['seq'];
-                    return s is int && s < mySeq;
-                  }).length;
+                  final int ahead = active
+                      .where((d) => QueueService.isBefore(d.data(), myData))
+                      .length;
                   _initialAhead ??= ahead;
                   final int initial = _initialAhead!;
                   final int position = ahead + 1;

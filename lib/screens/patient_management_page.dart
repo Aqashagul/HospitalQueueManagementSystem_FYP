@@ -17,7 +17,7 @@ class _PatientRow {
   final String department;
   final String doctor;
   final String phone;
-  final String status; // Waiting / In Consultation / Completed
+  final String status; // Waiting / In Consultation / Completed / Expired
 
   const _PatientRow({
     required this.id,
@@ -39,23 +39,27 @@ class _PatientRow {
       department: (d['department'] ?? '-').toString(),
       doctor: (d['doctorName'] ?? '-').toString(),
       phone: (d['phone'] ?? '-').toString(),
-      status: _statusLabel(d['status']?.toString()),
+      status: _statusLabel(d['status']?.toString(), d['joinedAt']),
     );
   }
 
   // Maps any stored status text to one of the three labels shown in the UI.
-  static String _statusLabel(String? raw) {
-    switch ((raw ?? '').toLowerCase()) {
-      case 'in-progress':
-      case 'in progress':
-      case 'in consultation':
-        return 'In Consultation';
-      case 'done':
-      case 'completed':
-        return 'Completed';
-      default:
-        return 'Waiting';
+  static String _statusLabel(String? raw, [Object? joinedAt]) {
+    final s = (raw ?? '').toLowerCase();
+    if (s == 'expired') return 'Expired';
+    if (s == 'done' || s == 'completed') return 'Completed';
+
+    // Still waiting / in consultation, but the token is older than 24 hours:
+    // it counts as Expired (even before the admin app has closed it).
+    final bool stale = joinedAt is Timestamp &&
+        DateTime.now().difference(joinedAt.toDate()) >
+            const Duration(hours: 24);
+    if (stale) return 'Expired';
+
+    if (s == 'in-progress' || s == 'in progress' || s == 'in consultation') {
+      return 'In Consultation';
     }
+    return 'Waiting';
   }
 }
 
@@ -289,7 +293,13 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
 
     final statusDropdown = _buildDropdown(
       value: selectedStatusFilter,
-      items: const ["Status", "Waiting", "In Consultation", "Completed"],
+      items: const [
+        "Status",
+        "Waiting",
+        "In Consultation",
+        "Completed",
+        "Expired",
+      ],
       onChanged: (value) => setState(() => selectedStatusFilter = value!),
       fillWidth: isMobile,
     );

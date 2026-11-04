@@ -55,7 +55,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
 
   // Live queue data for this doctor (today) straight from Firestore.
   final QueueAdminService _service = QueueAdminService();
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
+  StreamSubscription<QueueWindow>? _sub;
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _docs = [];
   bool _loaded = false;
   String? _loadError;
@@ -93,7 +93,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
       }, onError: (_) {});
     }
 
-    _sub = _service.watchTodaysEntriesForDoctor(id).listen(
+    _sub = _service.watchQueueWindowForDoctor(id).listen(
       (snap) {
         if (!mounted) return;
         setState(() {
@@ -237,10 +237,7 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
               status,
         )
         .toList()
-      ..sort(
-        (a, b) =>
-            QueueAdminService.seqOf(a).compareTo(QueueAdminService.seqOf(b)),
-      );
+      ..sort(QueueAdminService.queueOrder);
   }
 
   // Maps a Firestore queue entry into the QueuePatient view model.
@@ -1017,23 +1014,8 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
           fieldsSection,
           const SizedBox(height: 24),
 
-          Text(
-            "EST. WAIT",
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "${patient.estWaitMinutes} min",
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: AppColors.primaryPurple,
-            ),
-          ),
+          // Waiting time / consultation time, depending on the status.
+          _buildTimingSection(patient),
           const SizedBox(height: 28),
 
           // Complete / Call Patient / Skip / Cancel — each enabled only
@@ -1088,6 +1070,118 @@ class _DoctorQueueDetailPageState extends State<DoctorQueueDetailPage> {
           ],
         ],
       ),
+    );
+  }
+
+  // A time span in a form that is easy to read:
+  // "45 sec", "12 min", "5 h 12 min", "2 d 3 h".
+  String _formatDuration(Duration d) {
+    final seconds = d.isNegative ? 0 : d.inSeconds;
+    if (seconds < 60) return '$seconds sec';
+    final minutes = seconds ~/ 60;
+    if (minutes < 60) return '$minutes min';
+    final hours = minutes ~/ 60;
+    final restMinutes = minutes % 60;
+    if (hours < 24) {
+      return restMinutes == 0 ? '$hours h' : '$hours h $restMinutes min';
+    }
+    final days = hours ~/ 24;
+    final restHours = hours % 24;
+    return restHours == 0 ? '$days d' : '$days d $restHours h';
+  }
+
+  // The Firestore data of the entry with this token (null if not found).
+  Map<String, dynamic>? _entryDataForToken(String token) {
+    for (final d in _docs) {
+      if (d.data()['token']?.toString() == token) return d.data();
+    }
+    return null;
+  }
+
+  // Waiting: how long the patient has been waiting so far.
+  // In Consultation: how long the session has been running (live) and how
+  // long the patient waited before it started.
+  // Completed: how long the consultation took and how long they waited.
+  Widget _buildTimingSection(QueuePatient patient) {
+    final data = _entryDataForToken(patient.token);
+    DateTime? time(String key) {
+      final v = data?[key];
+      return v is Timestamp ? v.toDate() : null;
+    }
+
+    final joined = time('joinedAt') ?? patient.registrationTime;
+    final called = time('calledAt');
+    final completed = time('completedAt');
+    final now = DateTime.now();
+
+    final List<MapEntry<String, String>> items = [];
+    if (patient.status == 'Waiting') {
+      items.add(MapEntry('WAITING FOR', _formatDuration(now.difference(joined))));
+    } else if (patient.status == 'In Consultation') {
+      items.add(
+        MapEntry(
+          'IN CONSULTATION FOR',
+          called == null ? '--' : _formatDuration(now.difference(called)),
+        ),
+      );
+      if (called != null) {
+        items.add(
+          MapEntry(
+            'WAITED BEFORE CONSULTATION',
+            _formatDuration(called.difference(joined)),
+          ),
+        );
+      }
+    } else if (patient.status == 'Completed') {
+      items.add(
+        MapEntry(
+          'CONSULTATION TIME',
+          (called == null || completed == null)
+              ? '--'
+              : _formatDuration(completed.difference(called)),
+        ),
+      );
+      if (called != null) {
+        items.add(
+          MapEntry(
+            'WAITED BEFORE CONSULTATION',
+            _formatDuration(called.difference(joined)),
+          ),
+        );
+      }
+    }
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Wrap(
+      spacing: 40,
+      runSpacing: 20,
+      children: items
+          .map(
+            (e) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  e.key,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  e.value,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryPurple,
+                  ),
+                ),
+              ],
+            ),
+          )
+          .toList(),
     );
   }
 

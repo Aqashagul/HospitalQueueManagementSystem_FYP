@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/models/nav_items_model.dart';
 import 'package:queue_management_system/screens/dashboard_page.dart';
+import 'package:queue_management_system/screens/payment_page.dart';
 import 'package:queue_management_system/screens/reports_page.dart';
 import 'package:queue_management_system/screens/department_management_page.dart';
 import 'package:queue_management_system/screens/doctor_management_page.dart';
@@ -43,6 +44,13 @@ NavItem(
     icon: Icons.playlist_add_check_circle_outlined,
     pageBuilder: () => const QueueManagementPage(),
   ),
+
+   NavItem(
+    title: "Payment Management",
+    icon: Icons.payment_outlined,
+    pageBuilder: () => const PaymentsPage(),
+  ),
+
 
   NavItem(
     title: "Reports & Analytics",

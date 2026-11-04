@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:queue_management_system/BACKEND/auth_service.dart';
 import 'package:queue_management_system/DOCTOR/role_gatway.dart';
-import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/qr_scan_screen.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/splash_screen.dart';
 import 'package:queue_management_system/data/appdata_store.dart';
 import 'package:queue_management_system/notification_service.dart';

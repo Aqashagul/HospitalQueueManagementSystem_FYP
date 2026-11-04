@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/widgets/gradient_background.dart';
-import '../utils/app_theme.dart';
 import 'welcome_screen.dart';
 
 class SplashScreen extends StatefulWidget {

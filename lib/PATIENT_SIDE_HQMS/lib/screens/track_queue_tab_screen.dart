@@ -9,7 +9,6 @@ import '../models/doctor.dart';
 import '../utils/app_theme.dart';
 import '../widgets/app_bottom_nav.dart';
 import '../widgets/background_blobs.dart';
-import '../widgets/notification_bell.dart';
 import '../widgets/premium_button.dart';
 import 'department_list_screen.dart';
 import 'track_queue_screen.dart';
@@ -651,8 +650,9 @@ class _NoQueueView extends StatelessWidget {
                       const ['**'],
                       callback: (frameInfo) {
                         final c = frameInfo.startValue;
-                        if (c == null)
+                        if (c == null) {
                           return AppColors.primary.withValues(alpha: .85);
+                        }
 
                         final r = (c.r * 255).round();
                         final b = (c.b * 255).round();
