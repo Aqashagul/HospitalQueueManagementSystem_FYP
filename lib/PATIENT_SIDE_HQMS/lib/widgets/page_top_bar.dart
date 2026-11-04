@@ -8,7 +8,7 @@ class PageTopBar extends StatelessWidget {
   final String title;
   final bool showBell;
 
-  const PageTopBar({super.key, required this.title, this.showBell = true});
+  const PageTopBar({super.key, required this.title, this.showBell = false});
 
   @override
   Widget build(BuildContext context) {

@@ -25,6 +25,8 @@ Future<void> main() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
   await NotificationService.init();
+
+
   if (FirebaseAuth.instance.currentUser != null) {
     NotificationService.saveToken().catchError((_) {});
   }
@@ -51,6 +53,14 @@ class AdminApp extends StatelessWidget {
       create: (_) => AppdataStore(),
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          inputDecorationTheme: InputDecorationTheme(
+            hintStyle: TextStyle(
+              color: Colors.grey.shade500,
+              fontWeight: FontWeight.w400,
+            ),
+          )
+        ),
         // logged out -> login screen
         // logged in  -> AdminRoleGate checks the Firestore role:
         //               admin -> AppShell, doctor -> DoctorDashboard
@@ -86,6 +96,14 @@ class PatientApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        inputDecorationTheme: InputDecorationTheme(
+          hintStyle: TextStyle(
+            color: Colors.grey.shade500,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+      ),
       home: PatientRoleGate(
         splashScreen: SplashScreen(),
         qrScreen: const QrOrHomeGate(),

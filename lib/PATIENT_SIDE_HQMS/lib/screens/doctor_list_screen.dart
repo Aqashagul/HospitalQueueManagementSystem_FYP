@@ -12,8 +12,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/app_back_button.dart';
 import '../widgets/notification_bell.dart';
 
-
-
 class DoctorListScreen extends StatefulWidget {
   // The department the patient picked (live data from the admin side).
   final Department department;
@@ -120,13 +118,7 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                    Row(
-                    children: const [
-                      AppBackButton(),
-                      Spacer(),
-                      NotificationBell(),
-                    ],
-                  ),
+                  const Row(children: [AppBackButton()]),
                   const SizedBox(height: 14),
 
                   // Department name badge

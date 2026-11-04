@@ -12,6 +12,14 @@ import '../widgets/premium_button.dart';
 import 'welcome_screen.dart';
 import 'terms_conditions_screen.dart';
 import '../widgets/page_top_bar.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/queue_service.dart';
+import 'package:queue_management_system/DOCTOR/role_gatway.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/qr_or_home_gate.dart';
+import 'package:queue_management_system/PATIENT_SIDE_HQMS/lib/screens/splash_screen.dart';
+import 'package:queue_management_system/DOCTOR/app_user.dart';
+
+
+
 
 // >>> Add at the top with your other imports:
 //   import 'payment_history_screen.dart';   // adjust the path
@@ -155,6 +163,23 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     );
   }
 
+  // Updates today's queue entries of this patient, so admin and doctor
+  // screens show the new name too.
+  Future<void> _updateNameInQueue(String uid, String newName) async {
+    final db = FirebaseFirestore.instance;
+    final snap = await db
+        .collection('queue_entries')
+        .where('patientId', isEqualTo: uid)
+        .where('dayKey', isEqualTo: QueueService.dayKeyOf(DateTime.now()))
+        .get();
+    if (snap.docs.isEmpty) return;
+    final batch = db.batch();
+    for (final d in snap.docs) {
+      batch.update(d.reference, {'patientName': newName});
+    }
+    await batch.commit();
+  }
+
   // ---------------- Name ----------------
   Future<void> _editName(String current) async {
     final newName = await showModalBottomSheet<String>(
@@ -169,6 +194,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
       setState(() => _busy = true);
       await _auth.currentUser!.updateDisplayName(newName);
       await _doc.set({'name': newName}, SetOptions(merge: true));
+      await _updateNameInQueue(_auth.currentUser!.uid, newName);
       _snack('Name updated');
     } catch (_) {
       _snack('Could not update name. Please try again.', error: true);
@@ -177,8 +203,57 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     }
   }
 
+  // Removes today's active queue entries of this patient. Must run BEFORE
+  // signOut, because the Firestore rules need the patient to be logged in.
+  // Today's active queue entries of this patient (Waiting / In Consultation).
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _activeEntries() async {
+    final user = _auth.currentUser;
+    if (user == null) return [];
+    final snap = await FirebaseFirestore.instance
+        .collection('queue_entries')
+        .where('patientId', isEqualTo: user.uid)
+        .where('dayKey', isEqualTo: QueueService.dayKeyOf(DateTime.now()))
+        .get();
+    return snap.docs
+        .where(
+          (d) => QueueService.isActiveStatus(d.data()['status']?.toString()),
+        )
+        .toList();
+  }
+
+  // Must run BEFORE signOut, because the Firestore rules need the patient
+  // to be logged in.
+  Future<void> _leaveActiveQueues(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> entries,
+  ) async {
+    for (final d in entries) {
+      await QueueService().leaveQueue(d.id); // same call as "Leave Queue"
+    }
+  }
+
+
+  
+
   // ---------------- Logout ----------------
-  Future<void> _logout() async {
+ Future<void> _logout() async {
+    // Does the patient hold an active token right now?
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> active = [];
+    try {
+      active = await _activeEntries();
+    } catch (_) {}
+    if (!mounted) return;
+
+    String? queueInfo;
+    if (active.isNotEmpty) {
+      final data = active.first.data();
+      final token = data['token']?.toString() ?? '';
+      final doctor = data['doctorName']?.toString() ?? 'your doctor';
+      queueInfo =
+          'You have joined $doctor\'s queue'
+          '${token.isEmpty ? '' : ' (token $token)'}.';
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -188,8 +263,50 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
           'Log out?',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
-        content: const Text(
-          'You will need to verify your phone number again to log back in.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (queueInfo != null)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: .4),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.orange.shade800,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '$queueInfo\nIf you log out, you will leave this '
+                        'queue and lose your place.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          color: Colors.orange.shade900,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const Text(
+              'You will need to verify your phone number again to log back in.',
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -199,7 +316,9 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('Log out'),
+            child: Text(
+              queueInfo != null ? 'Leave queue & log out' : 'Log out',
+            ),
           ),
         ],
       ),
@@ -207,18 +326,26 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     if (ok != true || !mounted) return;
 
     final navigator = Navigator.of(context);
-    navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-      (route) => false,
-    );
     try {
-      // Forget the QR verification and any active queue entry, so the next
-      // login starts from the scan screen again.
+      await _leaveActiveQueues(active); // before signOut
+    } catch (_) {}
+    try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('qr_verified');
       await prefs.remove('active_entry_id');
       await _auth.signOut();
+      await RoleStorage.clear(); // role selection shows again
     } catch (_) {}
+
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => PatientRoleGate(
+          splashScreen: SplashScreen(),
+          qrScreen: const QrOrHomeGate(),
+        ),
+      ),
+      (route) => false,
+    );
   }
 
   @override
